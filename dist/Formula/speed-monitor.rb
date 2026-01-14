@@ -2,7 +2,7 @@ class SpeedMonitor < Formula
   desc "Organization-wide internet speed monitoring with WiFi analytics, VPN detection, and dashboard"
   homepage "https://github.com/hyperkishore/home-internet"
   url "https://github.com/hyperkishore/home-internet/archive/refs/tags/v2.0.0.tar.gz"
-  sha256 "PLACEHOLDER_SHA256"
+  sha256 "0209a10d5edb34f896e42b7b36c79b6bcf84d603b5641e795b37ea47acb72011"
   license "MIT"
   version "2.0.0"
 
