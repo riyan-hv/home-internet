@@ -1,10 +1,11 @@
 #!/bin/bash
 #
-# Speed Monitor v2.0.0 - Organization-Wide Internet Speed Monitoring
+# Speed Monitor v2.1.0 - Organization-Wide Internet Speed Monitoring
 # Enhanced data collection for fleet deployment (300+ devices)
+# v2.1.0: Added WiFi debugging metrics (MCS, error rates, BSSID tracking)
 #
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 
 # Configuration
 DATA_DIR="$HOME/.local/share/nkspeedtest"
@@ -19,8 +20,8 @@ SERVER_URL="${SPEED_MONITOR_SERVER:-}"
 # Ensure directories exist
 mkdir -p "$DATA_DIR" "$CONFIG_DIR"
 
-# CSV Header (v2.0 schema)
-CSV_HEADER="timestamp_utc,device_id,os_version,app_version,timezone,interface,ssid,bssid,band,channel,width_mhz,rssi_dbm,noise_dbm,snr_db,tx_rate_mbps,local_ip,public_ip,latency_ms,jitter_ms,jitter_p50,jitter_p95,packet_loss_pct,download_mbps,upload_mbps,vpn_status,vpn_name,errors,raw_payload"
+# CSV Header (v2.1 schema - added MCS, error rates, BSSID tracking)
+CSV_HEADER="timestamp_utc,device_id,os_version,app_version,timezone,interface,ssid,bssid,band,channel,width_mhz,rssi_dbm,noise_dbm,snr_db,tx_rate_mbps,mcs_index,spatial_streams,local_ip,public_ip,latency_ms,jitter_ms,jitter_p50,jitter_p95,packet_loss_pct,download_mbps,upload_mbps,vpn_status,vpn_name,input_errors,output_errors,input_error_rate,output_error_rate,tcp_retransmits,bssid_changed,roam_count,errors,raw_payload"
 
 # Create CSV header if file doesn't exist
 if [[ ! -f "$CSV_FILE" ]]; then
@@ -130,6 +131,144 @@ detect_vpn() {
 
     echo "VPN_STATUS=$vpn_status"
     echo "VPN_NAME=$vpn_name"
+}
+
+# Get MCS index and spatial streams from system_profiler
+# This is slower (~2-3 sec) but provides valuable link quality info
+get_mcs_info() {
+    local mcs_index=-1
+    local spatial_streams=0
+
+    # Only run if we have WiFi (skip for Ethernet)
+    if [[ "$CONNECTED" == "true" ]]; then
+        # Parse system_profiler for MCS Index (in Current Network Information section)
+        local sp_output=$(system_profiler SPAirPortDataType 2>/dev/null | grep -A 20 "Current Network Information:" | head -25)
+
+        # Extract MCS Index
+        mcs_index=$(echo "$sp_output" | grep "MCS Index:" | awk '{print $NF}')
+        mcs_index=${mcs_index:--1}
+
+        # Estimate spatial streams from MCS and rate
+        # MCS 0-7 = 1 stream, MCS 8-15 = 2 streams, MCS 16-23 = 3 streams, etc.
+        if [[ "$mcs_index" -ge 0 ]]; then
+            spatial_streams=$(( (mcs_index / 8) + 1 ))
+            # Cap at reasonable max
+            if [[ $spatial_streams -gt 4 ]]; then
+                spatial_streams=4
+            fi
+        fi
+    fi
+
+    echo "MCS_INDEX=$mcs_index"
+    echo "SPATIAL_STREAMS=$spatial_streams"
+}
+
+# Get interface statistics (packet errors, collisions)
+get_interface_stats() {
+    local input_errors=0
+    local output_errors=0
+    local input_packets=0
+    local output_packets=0
+
+    # Parse netstat -I en0 for interface stats
+    local netstat_output=$(netstat -I en0 2>/dev/null | tail -1)
+
+    if [[ -n "$netstat_output" ]]; then
+        # Columns: Name Mtu Network Address Ipkts Ierrs Opkts Oerrs Coll
+        input_packets=$(echo "$netstat_output" | awk '{print $5}')
+        input_errors=$(echo "$netstat_output" | awk '{print $6}')
+        output_packets=$(echo "$netstat_output" | awk '{print $7}')
+        output_errors=$(echo "$netstat_output" | awk '{print $8}')
+    fi
+
+    # Calculate error rates based on previous values
+    local prev_stats_file="$DATA_DIR/prev_interface_stats"
+    local input_error_rate=0
+    local output_error_rate=0
+
+    if [[ -f "$prev_stats_file" ]]; then
+        local prev_ipkts=$(awk 'NR==1' "$prev_stats_file")
+        local prev_ierrs=$(awk 'NR==2' "$prev_stats_file")
+        local prev_opkts=$(awk 'NR==3' "$prev_stats_file")
+        local prev_oerrs=$(awk 'NR==4' "$prev_stats_file")
+
+        local delta_ipkts=$((input_packets - prev_ipkts))
+        local delta_ierrs=$((input_errors - prev_ierrs))
+        local delta_opkts=$((output_packets - prev_opkts))
+        local delta_oerrs=$((output_errors - prev_oerrs))
+
+        # Calculate error rate as percentage (avoid division by zero)
+        if [[ $delta_ipkts -gt 0 ]]; then
+            input_error_rate=$(awk "BEGIN {printf \"%.4f\", ($delta_ierrs / $delta_ipkts) * 100}")
+        fi
+        if [[ $delta_opkts -gt 0 ]]; then
+            output_error_rate=$(awk "BEGIN {printf \"%.4f\", ($delta_oerrs / $delta_opkts) * 100}")
+        fi
+    fi
+
+    # Save current values for next run
+    echo "$input_packets" > "$prev_stats_file"
+    echo "$input_errors" >> "$prev_stats_file"
+    echo "$output_packets" >> "$prev_stats_file"
+    echo "$output_errors" >> "$prev_stats_file"
+
+    echo "INPUT_ERRORS=$input_errors"
+    echo "OUTPUT_ERRORS=$output_errors"
+    echo "INPUT_ERROR_RATE=$input_error_rate"
+    echo "OUTPUT_ERROR_RATE=$output_error_rate"
+}
+
+# Get TCP retransmission count
+get_tcp_retransmits() {
+    local tcp_retransmits=0
+
+    # Parse netstat -s for TCP retransmit stats
+    local retransmit_line=$(netstat -s 2>/dev/null | grep "data packets.*retransmitted" | head -1)
+
+    if [[ -n "$retransmit_line" ]]; then
+        tcp_retransmits=$(echo "$retransmit_line" | awk '{print $1}')
+    fi
+
+    echo "TCP_RETRANSMITS=${tcp_retransmits:-0}"
+}
+
+# Track BSSID changes (roaming detection)
+track_bssid_changes() {
+    local current_bssid="$1"
+    local bssid_changed=0
+    local roam_count=0
+
+    local prev_bssid_file="$DATA_DIR/prev_bssid"
+    local roam_count_file="$DATA_DIR/roam_count"
+
+    # Load previous BSSID
+    if [[ -f "$prev_bssid_file" ]]; then
+        local prev_bssid=$(cat "$prev_bssid_file")
+
+        # Check if BSSID changed (roaming event)
+        if [[ "$current_bssid" != "$prev_bssid" && -n "$current_bssid" && "$current_bssid" != "unknown" ]]; then
+            bssid_changed=1
+            log "BSSID changed from $prev_bssid to $current_bssid (roaming detected)"
+
+            # Increment roam count
+            if [[ -f "$roam_count_file" ]]; then
+                roam_count=$(cat "$roam_count_file")
+            fi
+            roam_count=$((roam_count + 1))
+            echo "$roam_count" > "$roam_count_file"
+        fi
+    fi
+
+    # Load current roam count
+    if [[ -f "$roam_count_file" ]]; then
+        roam_count=$(cat "$roam_count_file")
+    fi
+
+    # Save current BSSID
+    echo "$current_bssid" > "$prev_bssid_file"
+
+    echo "BSSID_CHANGED=$bssid_changed"
+    echo "ROAM_COUNT=${roam_count:-0}"
 }
 
 # Run ping test for jitter and packet loss calculation
@@ -244,6 +383,8 @@ build_json_payload() {
     json+="\"noise_dbm\":$NOISE_DBM,"
     json+="\"snr_db\":$SNR_DB,"
     json+="\"tx_rate_mbps\":$TX_RATE_MBPS,"
+    json+="\"mcs_index\":$MCS_INDEX,"
+    json+="\"spatial_streams\":$SPATIAL_STREAMS,"
     json+="\"local_ip\":\"$LOCAL_IP\","
     json+="\"public_ip\":\"$PUBLIC_IP\","
     json+="\"latency_ms\":$LATENCY_MS,"
@@ -255,6 +396,13 @@ build_json_payload() {
     json+="\"upload_mbps\":$UPLOAD_MBPS,"
     json+="\"vpn_status\":\"$VPN_STATUS\","
     json+="\"vpn_name\":\"$VPN_NAME\","
+    json+="\"input_errors\":$INPUT_ERRORS,"
+    json+="\"output_errors\":$OUTPUT_ERRORS,"
+    json+="\"input_error_rate\":$INPUT_ERROR_RATE,"
+    json+="\"output_error_rate\":$OUTPUT_ERROR_RATE,"
+    json+="\"tcp_retransmits\":$TCP_RETRANSMITS,"
+    json+="\"bssid_changed\":$BSSID_CHANGED,"
+    json+="\"roam_count\":$ROAM_COUNT,"
     json+="\"errors\":\"$ERRORS\""
     json+="}"
     echo "$json"
@@ -297,6 +445,20 @@ collect_metrics() {
     log "Detecting VPN status..."
     eval $(detect_vpn)
 
+    # MCS index and spatial streams (WiFi link quality)
+    log "Collecting MCS info..."
+    eval $(get_mcs_info)
+
+    # Interface error stats
+    log "Collecting interface stats..."
+    eval $(get_interface_stats)
+
+    # TCP retransmits
+    eval $(get_tcp_retransmits)
+
+    # BSSID change tracking (roaming detection)
+    eval $(track_bssid_changes "$BSSID")
+
     # Ping/jitter test
     log "Running ping test for jitter..."
     eval $(run_ping_test)
@@ -329,6 +491,15 @@ collect_metrics() {
     JITTER_P50=${JITTER_P50:-0}
     JITTER_P95=${JITTER_P95:-0}
     PACKET_LOSS_PCT=${PACKET_LOSS_PCT:-0}
+    MCS_INDEX=${MCS_INDEX:--1}
+    SPATIAL_STREAMS=${SPATIAL_STREAMS:-0}
+    INPUT_ERRORS=${INPUT_ERRORS:-0}
+    OUTPUT_ERRORS=${OUTPUT_ERRORS:-0}
+    INPUT_ERROR_RATE=${INPUT_ERROR_RATE:-0}
+    OUTPUT_ERROR_RATE=${OUTPUT_ERROR_RATE:-0}
+    TCP_RETRANSMITS=${TCP_RETRANSMITS:-0}
+    BSSID_CHANGED=${BSSID_CHANGED:-0}
+    ROAM_COUNT=${ROAM_COUNT:-0}
 
     ERRORS="$errors"
 
@@ -337,8 +508,8 @@ collect_metrics() {
     # Escape quotes for CSV
     local csv_payload=$(echo "$raw_payload" | sed 's/"/\\"/g')
 
-    # Append to CSV
-    echo "$TIMESTAMP_UTC,$DEVICE_ID,$OS_VERSION,$VERSION,$TIMEZONE,$INTERFACE,$SSID,$BSSID,$BAND,$CHANNEL,$WIDTH_MHZ,$RSSI_DBM,$NOISE_DBM,$SNR_DB,$TX_RATE_MBPS,$LOCAL_IP,$PUBLIC_IP,$LATENCY_MS,$JITTER_MS,$JITTER_P50,$JITTER_P95,$PACKET_LOSS_PCT,$DOWNLOAD_MBPS,$UPLOAD_MBPS,$VPN_STATUS,$VPN_NAME,$ERRORS,\"$csv_payload\"" >> "$CSV_FILE"
+    # Append to CSV (v2.1 schema)
+    echo "$TIMESTAMP_UTC,$DEVICE_ID,$OS_VERSION,$VERSION,$TIMEZONE,$INTERFACE,$SSID,$BSSID,$BAND,$CHANNEL,$WIDTH_MHZ,$RSSI_DBM,$NOISE_DBM,$SNR_DB,$TX_RATE_MBPS,$MCS_INDEX,$SPATIAL_STREAMS,$LOCAL_IP,$PUBLIC_IP,$LATENCY_MS,$JITTER_MS,$JITTER_P50,$JITTER_P95,$PACKET_LOSS_PCT,$DOWNLOAD_MBPS,$UPLOAD_MBPS,$VPN_STATUS,$VPN_NAME,$INPUT_ERRORS,$OUTPUT_ERRORS,$INPUT_ERROR_RATE,$OUTPUT_ERROR_RATE,$TCP_RETRANSMITS,$BSSID_CHANGED,$ROAM_COUNT,$ERRORS,\"$csv_payload\"" >> "$CSV_FILE"
 
     # Send to server if configured
     if [[ -n "$SERVER_URL" ]]; then
@@ -357,12 +528,15 @@ collect_metrics() {
     echo "BSSID: $BSSID"
     echo "Band: $BAND | Channel: $CHANNEL | Width: ${WIDTH_MHZ}MHz"
     echo "Signal: ${RSSI_DBM}dBm | Noise: ${NOISE_DBM}dBm | SNR: ${SNR_DB}dB"
+    echo "Link: MCS $MCS_INDEX | Streams: $SPATIAL_STREAMS | TX Rate: ${TX_RATE_MBPS}Mbps"
     echo "VPN: $VPN_NAME ($VPN_STATUS)"
     echo "Download: $DOWNLOAD_MBPS Mbps"
     echo "Upload: $UPLOAD_MBPS Mbps"
     echo "Latency: $LATENCY_MS ms"
     echo "Jitter: $JITTER_MS ms (P50: $JITTER_P50 | P95: $JITTER_P95)"
     echo "Packet Loss: $PACKET_LOSS_PCT%"
+    echo "Errors: In=${INPUT_ERROR_RATE}% Out=${OUTPUT_ERROR_RATE}% | Retransmits: $TCP_RETRANSMITS"
+    echo "Roaming: Changed=$BSSID_CHANGED | Total Roams: $ROAM_COUNT"
     echo "Status: $STATUS"
     echo "Results saved to: $CSV_FILE"
 

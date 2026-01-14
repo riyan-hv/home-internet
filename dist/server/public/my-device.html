@@ -411,6 +411,89 @@
             margin-top: 24px;
             flex-wrap: wrap;
         }
+
+        /* Diagnosis Grid */
+        .diagnosis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .diagnosis-item {
+            padding: 12px 16px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+
+        .diagnosis-item.issue {
+            border-left: 3px solid var(--warning);
+        }
+
+        .diagnosis-item.good {
+            border-left: 3px solid var(--success);
+        }
+
+        .diagnosis-label {
+            font-size: 0.75rem;
+            color: var(--muted-foreground);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+
+        .diagnosis-value {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .diagnosis-note {
+            font-size: 0.75rem;
+            color: var(--muted-foreground);
+            margin-top: 4px;
+        }
+
+        /* Stability Stats */
+        .stability-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .stability-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .stability-row:last-child {
+            border-bottom: none;
+        }
+
+        .stability-label {
+            font-size: 0.8125rem;
+            color: var(--muted-foreground);
+        }
+
+        .stability-value {
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .stability-value.muted {
+            color: var(--muted-foreground);
+            font-weight: 400;
+        }
+
+        .stability-value.warning {
+            color: var(--warning);
+        }
+
+        .stability-value.success {
+            color: var(--success);
+        }
     </style>
 </head>
 <body>
@@ -486,6 +569,68 @@
             </div>
         </div>
 
+        <!-- WiFi Diagnosis Card -->
+        <div class="card" id="diagnosisCard">
+            <div class="card-header">
+                <div class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></svg>
+                    WiFi Link Quality Diagnosis
+                </div>
+                <span class="severity-badge" id="diagnosisBadge">Analyzing...</span>
+            </div>
+            <div class="card-content">
+                <div class="diagnosis-grid" id="diagnosisContent">
+                    <p class="loading">Analyzing WiFi connection...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Link Quality Chart -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                        Link Quality (MCS Index)
+                    </div>
+                </div>
+                <div class="card-content">
+                    <div class="chart-container" style="height: 200px;">
+                        <canvas id="mcsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="m16 16-4-4-4 4"/></svg>
+                        Connection Stability
+                    </div>
+                </div>
+                <div class="card-content">
+                    <div class="stability-stats">
+                        <div class="stability-row">
+                            <span class="stability-label">Roaming Events (7d)</span>
+                            <span class="stability-value" id="roamCount">--</span>
+                        </div>
+                        <div class="stability-row">
+                            <span class="stability-label">Avg Error Rate</span>
+                            <span class="stability-value" id="errorRate">--</span>
+                        </div>
+                        <div class="stability-row">
+                            <span class="stability-label">Avg MCS Index</span>
+                            <span class="stability-value" id="avgMCS">--</span>
+                        </div>
+                        <div class="stability-row">
+                            <span class="stability-label">Expected MCS</span>
+                            <span class="stability-value muted" id="expectedMCS">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Recommendations -->
         <div class="card">
             <div class="card-header">
@@ -532,13 +677,14 @@
                                 <th>Time</th>
                                 <th>Download</th>
                                 <th>Upload</th>
+                                <th>MCS</th>
+                                <th>Err%</th>
                                 <th>Jitter</th>
                                 <th>VPN</th>
-                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody id="testsBody">
-                            <tr><td colspan="6" class="loading">Loading...</td></tr>
+                            <tr><td colspan="7" class="loading">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -557,6 +703,7 @@
     <script>
         const deviceId = window.location.pathname.split('/').pop();
         let trendsChart = null;
+        let mcsChart = null;
 
         // Chart.js defaults for dark theme
         Chart.defaults.color = '#a1a1aa';
@@ -601,29 +748,221 @@
                 // Load trends chart
                 loadTrendsChart(recentTests);
 
+                // Load WiFi diagnosis
+                try {
+                    const diagRes = await fetch(`/api/devices/${deviceId}/diagnose`);
+                    const diagData = await diagRes.json();
+                    renderDiagnosis(diagData);
+                } catch (e) {
+                    console.error('Diagnosis error:', e);
+                }
+
+                // Load link quality data
+                try {
+                    const linkRes = await fetch(`/api/devices/${deviceId}/link-quality?hours=168`);
+                    const linkData = await linkRes.json();
+                    renderLinkQuality(linkData);
+                    loadMCSChart(linkData.metrics);
+                } catch (e) {
+                    console.error('Link quality error:', e);
+                }
+
             } catch (err) {
                 console.error('Error loading data:', err);
             }
+        }
+
+        function renderDiagnosis(data) {
+            const badge = document.getElementById('diagnosisBadge');
+            const content = document.getElementById('diagnosisContent');
+
+            if (!data.diagnosis && data.message) {
+                badge.className = 'severity-badge severity-low';
+                badge.textContent = 'Insufficient Data';
+                content.innerHTML = `<p style="color: var(--muted-foreground);">${data.message}</p>`;
+                return;
+            }
+
+            // Set badge based on primary issue
+            if (data.primary_issue === 'none') {
+                badge.className = 'severity-badge severity-low';
+                badge.textContent = '✓ Healthy';
+            } else if (parseFloat(data.confidence) > 0.7) {
+                badge.className = 'severity-badge severity-high';
+                badge.textContent = 'Issue Detected';
+            } else {
+                badge.className = 'severity-badge severity-medium';
+                badge.textContent = 'Warning';
+            }
+
+            // Build diagnosis content
+            let html = '<div class="diagnosis-grid">';
+
+            // Summary stats
+            html += `
+                <div class="diagnosis-item ${data.primary_issue === 'none' ? 'good' : 'issue'}">
+                    <div class="diagnosis-label">Primary Issue</div>
+                    <div class="diagnosis-value">${data.primary_issue === 'none' ? 'None' : data.primary_issue.replace(/_/g, ' ')}</div>
+                    <div class="diagnosis-note">Confidence: ${(parseFloat(data.confidence) * 100).toFixed(0)}%</div>
+                </div>
+            `;
+
+            html += `
+                <div class="diagnosis-item">
+                    <div class="diagnosis-label">Avg RSSI</div>
+                    <div class="diagnosis-value">${data.summary.avg_rssi} dBm</div>
+                    <div class="diagnosis-note">${data.summary.avg_rssi > -60 ? 'Strong' : data.summary.avg_rssi > -70 ? 'Good' : 'Weak'}</div>
+                </div>
+            `;
+
+            html += `
+                <div class="diagnosis-item">
+                    <div class="diagnosis-label">Avg Speed</div>
+                    <div class="diagnosis-value">${data.summary.avg_download} Mbps</div>
+                </div>
+            `;
+
+            html += `
+                <div class="diagnosis-item">
+                    <div class="diagnosis-label">Error Rate</div>
+                    <div class="diagnosis-value ${parseFloat(data.summary.avg_error_rate) > 0.5 ? 'warning' : ''}">${data.summary.avg_error_rate}</div>
+                </div>
+            `;
+
+            html += '</div>';
+
+            // Show factors if any
+            if (data.factors && data.factors.length > 0) {
+                html += '<div style="margin-top: 16px;">';
+                html += '<h4 style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 8px;">CONTRIBUTING FACTORS</h4>';
+                html += '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+                data.factors.forEach(f => {
+                    const severity = f.score > 0.7 ? 'high' : f.score > 0.4 ? 'medium' : 'low';
+                    html += `<span class="severity-badge severity-${severity}">${f.factor.replace(/_/g, ' ')}</span>`;
+                });
+                html += '</div></div>';
+            }
+
+            content.innerHTML = html;
+        }
+
+        function renderLinkQuality(data) {
+            if (!data.summary) return;
+
+            document.getElementById('roamCount').textContent = data.summary.total_roam_events || 0;
+            document.getElementById('avgMCS').textContent = data.summary.avg_mcs;
+            document.getElementById('expectedMCS').textContent = data.summary.expected_mcs;
+
+            const errorRate = parseFloat(data.summary.avg_error_rate) * 100;
+            const errorRateEl = document.getElementById('errorRate');
+            errorRateEl.textContent = errorRate.toFixed(3) + '%';
+            if (errorRate > 0.5) {
+                errorRateEl.classList.add('warning');
+            } else {
+                errorRateEl.classList.add('success');
+            }
+
+            // Update MCS display based on deficit
+            const avgMCSEl = document.getElementById('avgMCS');
+            if (parseFloat(data.summary.mcs_deficit) > 2) {
+                avgMCSEl.classList.add('warning');
+            }
+        }
+
+        function loadMCSChart(metrics) {
+            if (!metrics || metrics.length < 2) return;
+
+            const ctx = document.getElementById('mcsChart').getContext('2d');
+
+            // Filter to valid MCS values and take last 20
+            const validMetrics = metrics.filter(m => m.mcs_index >= 0).slice(0, 20).reverse();
+
+            if (validMetrics.length < 2) {
+                document.getElementById('mcsChart').parentElement.innerHTML =
+                    '<p style="color: var(--muted-foreground); text-align: center; padding: 40px;">MCS data not yet available</p>';
+                return;
+            }
+
+            const labels = validMetrics.map(m => {
+                const d = new Date(m.timestamp_utc);
+                return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            });
+
+            if (mcsChart) mcsChart.destroy();
+
+            mcsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'MCS Index',
+                            data: validMetrics.map(m => m.mcs_index),
+                            borderColor: '#8b5cf6',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Download (Mbps/10)',
+                            data: validMetrics.map(m => (m.download_mbps || 0) / 10),
+                            borderColor: '#3b82f6',
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.3,
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            align: 'end',
+                            labels: { boxWidth: 12 }
+                        }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            min: 0,
+                            max: 12,
+                            grid: { color: '#27272a' }
+                        }
+                    }
+                }
+            });
         }
 
         function renderRecentTests(tests) {
             const tbody = document.getElementById('testsBody');
 
             if (!tests || tests.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No test data yet</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No test data yet</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = tests.slice(0, 20).map(t => `
-                <tr>
-                    <td style="white-space: nowrap;">${new Date(t.timestamp_utc).toLocaleString()}</td>
-                    <td>${t.download_mbps?.toFixed(1) || '--'} Mbps</td>
-                    <td>${t.upload_mbps?.toFixed(1) || '--'} Mbps</td>
-                    <td>${t.jitter_ms?.toFixed(1) || '--'} ms</td>
-                    <td>${t.vpn_status === 'connected' ? t.vpn_name : 'Off'}</td>
-                    <td><span class="status-dot status-${t.status}"></span>${t.status}</td>
-                </tr>
-            `).join('');
+            tbody.innerHTML = tests.slice(0, 20).map(t => {
+                const errorRate = ((t.input_error_rate || 0) + (t.output_error_rate || 0)) * 100;
+                const mcsDisplay = t.mcs_index >= 0 ? t.mcs_index : '--';
+                const mcsClass = t.mcs_index >= 0 && t.mcs_index < 5 ? 'style="color: var(--warning)"' : '';
+                const errClass = errorRate > 0.5 ? 'style="color: var(--warning)"' : '';
+
+                return `
+                    <tr>
+                        <td style="white-space: nowrap;">${new Date(t.timestamp_utc).toLocaleString()}</td>
+                        <td>${t.download_mbps?.toFixed(1) || '--'} Mbps</td>
+                        <td>${t.upload_mbps?.toFixed(1) || '--'} Mbps</td>
+                        <td ${mcsClass}>${mcsDisplay}</td>
+                        <td ${errClass}>${errorRate.toFixed(3)}%</td>
+                        <td>${t.jitter_ms?.toFixed(1) || '--'} ms</td>
+                        <td>${t.vpn_status === 'connected' ? '🔒' : 'Off'}</td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         function renderRecommendations(recs) {

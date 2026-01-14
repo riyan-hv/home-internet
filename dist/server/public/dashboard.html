@@ -878,10 +878,34 @@
                 </div>
             </div>
         </div>
+
+        <!-- Link Quality Correlation -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="7.5" r="1.5"/><circle cx="18.5" cy="5.5" r="1.5"/><circle cx="11.5" cy="11.5" r="1.5"/><circle cx="7.5" cy="16.5" r="1.5"/><circle cx="17.5" cy="14.5" r="1.5"/></svg>
+                    Signal vs Speed Correlation
+                </div>
+                <span class="badge" id="outlierCount">-- outliers</span>
+            </div>
+            <div class="card-content">
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="scatterChart"></canvas>
+                    </div>
+                    <div>
+                        <h4 style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Insights</h4>
+                        <div id="scatterInsights" style="font-size: 0.8125rem;">
+                            <p class="loading">Loading correlation data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        let trendChart = null, vpnChart = null, jitterChart = null, bandChart = null, historicalChart = null, ispChart = null;
+        let trendChart = null, vpnChart = null, jitterChart = null, bandChart = null, historicalChart = null, ispChart = null, scatterChart = null;
         let allDevices = [];
 
         // Chart.js defaults for dark theme
@@ -898,7 +922,8 @@
                 loadISPStats(),
                 loadWiFiRecommendations(),
                 loadAlerts(),
-                loadTimeOfDay()
+                loadTimeOfDay(),
+                loadLinkQualityCorrelation()
             ]);
             document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
         }
@@ -1418,6 +1443,116 @@
                     </div>
                 `;
             }).join('');
+        }
+
+        async function loadLinkQualityCorrelation() {
+            try {
+                const response = await fetch('/api/stats/link-quality-correlation?days=7');
+                const data = await response.json();
+
+                // Update outlier count badge
+                document.getElementById('outlierCount').textContent =
+                    (data.outliers?.count || 0) + ' outliers';
+
+                // Build scatter chart
+                const ctx = document.getElementById('scatterChart').getContext('2d');
+                const scatterData = data.scatter_data || [];
+
+                if (scatterChart) scatterChart.destroy();
+
+                scatterChart = new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Signal vs Speed',
+                            data: scatterData.map(d => ({
+                                x: d.rssi,
+                                y: d.download,
+                                mcs: d.mcs
+                            })),
+                            backgroundColor: scatterData.map(d => {
+                                // Color by MCS: low MCS = warning, high MCS = good
+                                if (d.mcs < 0) return 'rgba(161, 161, 170, 0.5)';
+                                if (d.mcs < 5) return 'rgba(245, 158, 11, 0.6)';
+                                return 'rgba(59, 130, 246, 0.6)';
+                            }),
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const d = ctx.raw;
+                                        return `RSSI: ${d.x}dBm, Speed: ${d.y.toFixed(0)}Mbps, MCS: ${d.mcs >= 0 ? d.mcs : 'N/A'}`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: { display: true, text: 'RSSI (dBm)' },
+                                min: -90,
+                                max: -30,
+                                reverse: true,
+                                grid: { color: '#27272a' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Download (Mbps)' },
+                                min: 0,
+                                grid: { color: '#27272a' }
+                            }
+                        }
+                    }
+                });
+
+                // Build insights
+                const insightsEl = document.getElementById('scatterInsights');
+                let html = '';
+
+                if (data.outliers?.count > 0) {
+                    html += `
+                        <div style="padding: 10px; background: rgba(245, 158, 11, 0.1); border-left: 3px solid var(--warning); border-radius: 4px; margin-bottom: 12px;">
+                            <div style="font-weight: 500; margin-bottom: 4px;">⚠️ ${data.outliers.count} devices with signal issues</div>
+                            <div style="font-size: 0.75rem; color: var(--muted-foreground);">Good signal (>-60dBm) but slow speeds (<30Mbps)</div>
+                        </div>
+                    `;
+                }
+
+                if (data.rssi_buckets && data.rssi_buckets.length > 0) {
+                    html += '<div style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">By Signal Strength</div>';
+                    html += '<div style="display: flex; flex-direction: column; gap: 6px;">';
+                    data.rssi_buckets.forEach(b => {
+                        const barWidth = Math.min(100, (parseFloat(b.avg_download) / 100) * 100);
+                        html += `
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="width: 80px; font-size: 0.75rem; color: var(--muted-foreground);">${b.rssi_range}</span>
+                                <div style="flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
+                                    <div style="width: ${barWidth}%; height: 100%; background: var(--info);"></div>
+                                </div>
+                                <span style="font-size: 0.75rem; font-weight: 500;">${b.avg_download} Mbps</span>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                }
+
+                if (html === '') {
+                    html = '<p style="color: var(--muted-foreground);">Insufficient data for correlation analysis</p>';
+                }
+
+                insightsEl.innerHTML = html;
+
+            } catch (err) {
+                console.error('Link quality correlation error:', err);
+                document.getElementById('scatterInsights').innerHTML =
+                    '<p style="color: var(--muted-foreground);">Failed to load correlation data</p>';
+            }
         }
 
         loadAllData();

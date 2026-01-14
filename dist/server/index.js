@@ -23,7 +23,7 @@ app.use('/api/', limiter);
 // Initialize SQLite database
 const db = new Database(process.env.DB_PATH || './speed_monitor.db');
 
-// Create tables with v2.0 schema
+// Create tables with v2.1 schema (added WiFi debugging fields)
 db.exec(`
   CREATE TABLE IF NOT EXISTS speed_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,6 +55,10 @@ db.exec(`
     snr_db INTEGER DEFAULT 0,
     tx_rate_mbps REAL DEFAULT 0,
 
+    -- v2.1: Link quality metrics
+    mcs_index INTEGER DEFAULT -1,
+    spatial_streams INTEGER DEFAULT 0,
+
     -- Performance metrics
     latency_ms REAL DEFAULT 0,
     jitter_ms REAL DEFAULT 0,
@@ -67,6 +71,17 @@ db.exec(`
     -- VPN status
     vpn_status TEXT DEFAULT 'disconnected',
     vpn_name TEXT DEFAULT 'none',
+
+    -- v2.1: Interface error metrics
+    input_errors BIGINT DEFAULT 0,
+    output_errors BIGINT DEFAULT 0,
+    input_error_rate REAL DEFAULT 0,
+    output_error_rate REAL DEFAULT 0,
+    tcp_retransmits BIGINT DEFAULT 0,
+
+    -- v2.1: BSSID tracking (roaming detection)
+    bssid_changed INTEGER DEFAULT 0,
+    roam_count INTEGER DEFAULT 0,
 
     -- Status and errors
     status TEXT DEFAULT 'success',
@@ -164,9 +179,49 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_alert_history_time ON alert_history(triggered_at);
   CREATE INDEX IF NOT EXISTS idx_daily_aggregates_date ON daily_aggregates(date);
   CREATE INDEX IF NOT EXISTS idx_isp_cache_time ON isp_cache(cached_at);
+
+  -- v2.1: Connection events table (for tracking disconnects/roaming)
+  CREATE TABLE IF NOT EXISTS connection_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,  -- 'connect', 'disconnect', 'roam', 'bssid_change'
+    timestamp_utc DATETIME NOT NULL,
+    ssid TEXT,
+    bssid TEXT,
+    prev_bssid TEXT,
+    channel INTEGER,
+    band TEXT,
+    rssi_dbm INTEGER,
+    association_duration_sec INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conn_events_device ON connection_events(device_id, timestamp_utc);
+  CREATE INDEX IF NOT EXISTS idx_conn_events_type ON connection_events(event_type);
 `);
 
-// API: Submit speed test result (v2.0)
+// v2.1: Add new columns to existing speed_results table (for existing databases)
+const columnsToAdd = [
+  { name: 'mcs_index', type: 'INTEGER DEFAULT -1' },
+  { name: 'spatial_streams', type: 'INTEGER DEFAULT 0' },
+  { name: 'input_errors', type: 'BIGINT DEFAULT 0' },
+  { name: 'output_errors', type: 'BIGINT DEFAULT 0' },
+  { name: 'input_error_rate', type: 'REAL DEFAULT 0' },
+  { name: 'output_error_rate', type: 'REAL DEFAULT 0' },
+  { name: 'tcp_retransmits', type: 'BIGINT DEFAULT 0' },
+  { name: 'bssid_changed', type: 'INTEGER DEFAULT 0' },
+  { name: 'roam_count', type: 'INTEGER DEFAULT 0' }
+];
+
+for (const col of columnsToAdd) {
+  try {
+    db.exec(`ALTER TABLE speed_results ADD COLUMN ${col.name} ${col.type}`);
+  } catch (err) {
+    // Column already exists, ignore
+  }
+}
+
+// API: Submit speed test result (v2.1 - added WiFi debugging fields)
 app.post('/api/results', (req, res) => {
   const data = req.body;
 
@@ -180,14 +235,22 @@ app.post('/api/results', (req, res) => {
         device_id, user_id, hostname, timestamp_utc, os_version, app_version, timezone,
         interface, local_ip, public_ip,
         ssid, bssid, band, channel, width_mhz, rssi_dbm, noise_dbm, snr_db, tx_rate_mbps,
+        mcs_index, spatial_streams,
         latency_ms, jitter_ms, jitter_p50, jitter_p95, packet_loss_pct, download_mbps, upload_mbps,
-        vpn_status, vpn_name, status, errors, raw_payload
+        vpn_status, vpn_name,
+        input_errors, output_errors, input_error_rate, output_error_rate, tcp_retransmits,
+        bssid_changed, roam_count,
+        status, errors, raw_payload
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
+        ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?,
+        ?, ?, ?
       )
     `);
 
@@ -211,6 +274,8 @@ app.post('/api/results', (req, res) => {
       data.noise_dbm || 0,
       data.snr_db || 0,
       data.tx_rate_mbps || 0,
+      data.mcs_index ?? -1,
+      data.spatial_streams || 0,
       data.latency_ms || 0,
       data.jitter_ms || 0,
       data.jitter_p50 || 0,
@@ -220,10 +285,26 @@ app.post('/api/results', (req, res) => {
       data.upload_mbps || 0,
       data.vpn_status || 'disconnected',
       data.vpn_name || 'none',
+      data.input_errors || 0,
+      data.output_errors || 0,
+      data.input_error_rate || 0,
+      data.output_error_rate || 0,
+      data.tcp_retransmits || 0,
+      data.bssid_changed || 0,
+      data.roam_count || 0,
       data.status || 'success',
       data.errors || null,
       typeof data === 'object' ? JSON.stringify(data) : null
     );
+
+    // v2.1: Record BSSID change as connection event
+    if (data.bssid_changed === 1 || data.bssid_changed === true) {
+      db.prepare(`
+        INSERT INTO connection_events (device_id, event_type, timestamp_utc, ssid, bssid, channel, band, rssi_dbm)
+        VALUES (?, 'roam', ?, ?, ?, ?, ?, ?)
+      `).run(data.device_id, data.timestamp_utc || new Date().toISOString(),
+             data.ssid, data.bssid, data.channel || 0, data.band, data.rssi_dbm || 0);
+    }
 
     // v3.0: Check alerts and anomalies asynchronously
     checkAlerts(data).catch(err => console.error('Alert check error:', err));
@@ -751,6 +832,64 @@ async function checkAlerts(result) {
       alertType = 'High Packet Loss';
       message = `Packet loss ${result.packet_loss_pct}% exceeds threshold of ${config.threshold_packet_loss_pct}%`;
       severity = 'critical';
+    }
+
+    // WiFi Debugging Alerts
+
+    // Check high error rate (>1% packet errors)
+    const errorRate = Math.max(result.input_error_rate || 0, result.output_error_rate || 0);
+    if (!triggered && errorRate > 1.0) {
+      triggered = true;
+      alertType = 'High Error Rate';
+      message = `Packet error rate ${errorRate.toFixed(2)}% exceeds 1% threshold (input: ${(result.input_error_rate || 0).toFixed(2)}%, output: ${(result.output_error_rate || 0).toFixed(2)}%)`;
+      severity = errorRate > 5.0 ? 'critical' : 'warning';
+    }
+
+    // Check excessive roaming (>5 BSSID changes/hour)
+    if (!triggered && result.bssid_changed) {
+      const recentRoams = db.prepare(`
+        SELECT COUNT(*) as count FROM connection_events
+        WHERE device_id = ? AND event_type = 'roam'
+        AND timestamp_utc > datetime('now', '-1 hour')
+      `).get(result.device_id);
+
+      if (recentRoams && recentRoams.count > 5) {
+        triggered = true;
+        alertType = 'Excessive Roaming';
+        message = `Device roamed ${recentRoams.count} times in the last hour (threshold: 5). Possible AP instability or weak signal areas.`;
+        severity = recentRoams.count > 10 ? 'critical' : 'warning';
+      }
+    }
+
+    // Check hidden congestion (good RSSI but poor MCS and high retransmits)
+    // This detects "slow despite good signal" issue
+    if (!triggered && result.rssi_dbm && result.rssi_dbm > -60) {
+      const hasPoorMCS = result.mcs_index !== undefined && result.mcs_index >= 0 && result.mcs_index < 5;
+      const hasHighRetransmits = result.tcp_retransmits && result.tcp_retransmits > 100;
+      const hasSlowSpeed = result.download_mbps < 50;
+
+      if (hasPoorMCS && (hasHighRetransmits || hasSlowSpeed)) {
+        triggered = true;
+        alertType = 'Hidden Congestion';
+        message = `Good signal (${result.rssi_dbm} dBm) but poor link quality: MCS ${result.mcs_index}, ${result.download_mbps} Mbps. Possible interference or congestion.`;
+        severity = 'critical';
+      }
+    }
+
+    // Check frequent disconnects (>3 disconnects/hour)
+    if (!triggered) {
+      const recentDisconnects = db.prepare(`
+        SELECT COUNT(*) as count FROM connection_events
+        WHERE device_id = ? AND event_type = 'disconnect'
+        AND timestamp_utc > datetime('now', '-1 hour')
+      `).get(result.device_id);
+
+      if (recentDisconnects && recentDisconnects.count > 3) {
+        triggered = true;
+        alertType = 'Frequent Disconnects';
+        message = `Device disconnected ${recentDisconnects.count} times in the last hour (threshold: 3). Check for interference or router issues.`;
+        severity = 'critical';
+      }
     }
 
     if (triggered) {
@@ -1303,6 +1442,425 @@ app.get('/api/devices/:device_id/troubleshoot', (req, res) => {
   }
 });
 
+// ============================================
+// v2.1 WiFi Debugging APIs
+// ============================================
+
+// Link Quality Analysis API - MCS trends, error rates over time
+app.get('/api/devices/:device_id/link-quality', (req, res) => {
+  const { device_id } = req.params;
+  const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+
+  try {
+    // Get link quality metrics over time
+    const linkQuality = db.prepare(`
+      SELECT
+        timestamp_utc,
+        rssi_dbm,
+        mcs_index,
+        spatial_streams,
+        tx_rate_mbps,
+        download_mbps,
+        input_error_rate,
+        output_error_rate,
+        tcp_retransmits,
+        bssid_changed
+      FROM speed_results
+      WHERE device_id = ? AND status = 'success'
+        AND timestamp_utc > datetime('now', '-' || ? || ' hours')
+      ORDER BY timestamp_utc DESC
+    `).all(device_id, hours);
+
+    // Calculate correlations
+    const validMCS = linkQuality.filter(r => r.mcs_index >= 0);
+    const avgMCS = validMCS.length > 0 ?
+      validMCS.reduce((sum, r) => sum + r.mcs_index, 0) / validMCS.length : -1;
+
+    const avgRSSI = linkQuality.length > 0 ?
+      linkQuality.reduce((sum, r) => sum + (r.rssi_dbm || 0), 0) / linkQuality.length : 0;
+
+    const avgErrorRate = linkQuality.length > 0 ?
+      linkQuality.reduce((sum, r) => sum + (r.input_error_rate || 0) + (r.output_error_rate || 0), 0) / linkQuality.length : 0;
+
+    const avgSpeed = linkQuality.length > 0 ?
+      linkQuality.reduce((sum, r) => sum + (r.download_mbps || 0), 0) / linkQuality.length : 0;
+
+    // Detect "slow despite good signal" pattern
+    const goodSignalSlowSpeed = linkQuality.filter(r =>
+      r.rssi_dbm > -60 && r.download_mbps < 50
+    );
+
+    // Expected MCS based on RSSI (rough mapping)
+    // RSSI > -50: MCS 9-11, RSSI -50 to -60: MCS 7-9, RSSI -60 to -70: MCS 5-7
+    const expectedMCS = avgRSSI > -50 ? 9 : avgRSSI > -60 ? 7 : avgRSSI > -70 ? 5 : 3;
+    const mcsDeficit = avgMCS >= 0 ? expectedMCS - avgMCS : 0;
+
+    res.json({
+      device_id,
+      period_hours: hours,
+      data_points: linkQuality.length,
+      metrics: linkQuality,
+      summary: {
+        avg_rssi: Math.round(avgRSSI),
+        avg_mcs: avgMCS >= 0 ? avgMCS.toFixed(1) : 'N/A',
+        expected_mcs: expectedMCS,
+        mcs_deficit: mcsDeficit.toFixed(1),
+        avg_error_rate: avgErrorRate.toFixed(4),
+        avg_download: avgSpeed.toFixed(1),
+        good_signal_slow_speed_count: goodSignalSlowSpeed.length,
+        total_roam_events: linkQuality.filter(r => r.bssid_changed).length
+      },
+      diagnosis: {
+        has_link_quality_issue: mcsDeficit > 2 || avgErrorRate > 0.01,
+        has_slow_despite_good_signal: goodSignalSlowSpeed.length > linkQuality.length * 0.2,
+        issue_description: mcsDeficit > 2 ?
+          'MCS index lower than expected for signal strength - possible interference or AP congestion' :
+          avgErrorRate > 0.01 ?
+          'Elevated packet error rate - check for interference or driver issues' :
+          goodSignalSlowSpeed.length > linkQuality.length * 0.2 ?
+          'Good signal but slow speeds - likely AP overload or backhaul issue' :
+          'No significant link quality issues detected'
+      }
+    });
+  } catch (err) {
+    console.error('Link quality error:', err);
+    res.status(500).json({ error: 'Failed to fetch link quality data' });
+  }
+});
+
+// Connection Events API - track disconnects and roaming
+app.get('/api/devices/:device_id/connection-events', (req, res) => {
+  const { device_id } = req.params;
+  const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+  const event_type = req.query.event_type;
+
+  try {
+    let query = `
+      SELECT * FROM connection_events
+      WHERE device_id = ?
+        AND timestamp_utc > datetime('now', '-' || ? || ' hours')
+    `;
+    let params = [device_id, hours];
+
+    if (event_type) {
+      query += ' AND event_type = ?';
+      params.push(event_type);
+    }
+
+    query += ' ORDER BY timestamp_utc DESC LIMIT 100';
+
+    const events = db.prepare(query).all(...params);
+
+    // Get BSSID change count from speed_results as backup
+    const roamCount = db.prepare(`
+      SELECT COUNT(*) as count FROM speed_results
+      WHERE device_id = ? AND bssid_changed = 1
+        AND timestamp_utc > datetime('now', '-' || ? || ' hours')
+    `).get(device_id, hours);
+
+    res.json({
+      device_id,
+      period_hours: hours,
+      events,
+      summary: {
+        total_events: events.length,
+        roam_events: events.filter(e => e.event_type === 'roam').length,
+        disconnect_events: events.filter(e => e.event_type === 'disconnect').length,
+        roam_count_from_tests: roamCount.count
+      }
+    });
+  } catch (err) {
+    console.error('Connection events error:', err);
+    res.status(500).json({ error: 'Failed to fetch connection events' });
+  }
+});
+
+// Submit Connection Event
+app.post('/api/connection-events', (req, res) => {
+  const data = req.body;
+
+  if (!data.device_id || !data.event_type) {
+    return res.status(400).json({ error: 'device_id and event_type are required' });
+  }
+
+  try {
+    const result = db.prepare(`
+      INSERT INTO connection_events (device_id, event_type, timestamp_utc, ssid, bssid, prev_bssid, channel, band, rssi_dbm, association_duration_sec)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      data.device_id,
+      data.event_type,
+      data.timestamp_utc || new Date().toISOString(),
+      data.ssid || null,
+      data.bssid || null,
+      data.prev_bssid || null,
+      data.channel || 0,
+      data.band || null,
+      data.rssi_dbm || 0,
+      data.association_duration_sec || null
+    );
+
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (err) {
+    console.error('Connection event insert error:', err);
+    res.status(500).json({ error: 'Failed to record connection event' });
+  }
+});
+
+// Link Quality Correlation API - organization-wide RSSI vs speed analysis
+app.get('/api/stats/link-quality-correlation', (req, res) => {
+  const days = Math.min(parseInt(req.query.days) || 7, 30);
+
+  try {
+    // Get all data points with link quality metrics
+    const data = db.prepare(`
+      SELECT
+        device_id,
+        rssi_dbm,
+        mcs_index,
+        spatial_streams,
+        download_mbps,
+        input_error_rate,
+        output_error_rate
+      FROM speed_results
+      WHERE status = 'success'
+        AND rssi_dbm < 0
+        AND download_mbps > 0
+        AND timestamp_utc > datetime('now', '-' || ? || ' days')
+    `).all(days);
+
+    // Group by RSSI buckets for analysis
+    const rssiBuckets = {};
+    for (const row of data) {
+      const bucket = Math.floor(row.rssi_dbm / 10) * 10; // -50, -60, -70, etc.
+      if (!rssiBuckets[bucket]) {
+        rssiBuckets[bucket] = { rssi: bucket, speeds: [], mcs: [], errors: [] };
+      }
+      rssiBuckets[bucket].speeds.push(row.download_mbps);
+      if (row.mcs_index >= 0) rssiBuckets[bucket].mcs.push(row.mcs_index);
+      rssiBuckets[bucket].errors.push((row.input_error_rate || 0) + (row.output_error_rate || 0));
+    }
+
+    // Calculate averages per bucket
+    const bucketStats = Object.values(rssiBuckets).map(b => ({
+      rssi_range: `${b.rssi} to ${b.rssi + 9}`,
+      rssi_midpoint: b.rssi + 5,
+      sample_count: b.speeds.length,
+      avg_download: (b.speeds.reduce((a, c) => a + c, 0) / b.speeds.length).toFixed(1),
+      avg_mcs: b.mcs.length > 0 ? (b.mcs.reduce((a, c) => a + c, 0) / b.mcs.length).toFixed(1) : 'N/A',
+      avg_error_rate: (b.errors.reduce((a, c) => a + c, 0) / b.errors.length).toFixed(4)
+    })).sort((a, b) => b.rssi_midpoint - a.rssi_midpoint);
+
+    // Find outliers - good signal but slow speed
+    const outliers = data.filter(r =>
+      r.rssi_dbm > -60 && r.download_mbps < 30
+    ).slice(0, 20).map(r => ({
+      device_id: r.device_id.substring(0, 8) + '...',
+      rssi: r.rssi_dbm,
+      speed: r.download_mbps,
+      mcs: r.mcs_index,
+      error_rate: ((r.input_error_rate || 0) + (r.output_error_rate || 0)).toFixed(4)
+    }));
+
+    res.json({
+      period_days: days,
+      total_samples: data.length,
+      rssi_buckets: bucketStats,
+      outliers: {
+        count: outliers.length,
+        description: 'Devices with good signal (>-60dBm) but slow speeds (<30Mbps)',
+        samples: outliers
+      },
+      scatter_data: data.slice(0, 500).map(r => ({
+        rssi: r.rssi_dbm,
+        download: r.download_mbps,
+        mcs: r.mcs_index,
+        error_rate: (r.input_error_rate || 0) + (r.output_error_rate || 0)
+      }))
+    });
+  } catch (err) {
+    console.error('Link quality correlation error:', err);
+    res.status(500).json({ error: 'Failed to fetch link quality correlation' });
+  }
+});
+
+// Advanced Diagnosis API - comprehensive multi-factor analysis
+app.get('/api/devices/:device_id/diagnose', (req, res) => {
+  const { device_id } = req.params;
+
+  try {
+    // Get recent metrics
+    const recentData = db.prepare(`
+      SELECT * FROM speed_results
+      WHERE device_id = ? AND status = 'success'
+        AND timestamp_utc > datetime('now', '-7 days')
+      ORDER BY timestamp_utc DESC
+      LIMIT 50
+    `).all(device_id);
+
+    if (recentData.length < 3) {
+      return res.json({
+        device_id,
+        diagnosis: null,
+        message: 'Insufficient data for diagnosis (need at least 3 tests)'
+      });
+    }
+
+    // Calculate averages
+    const avg = (arr, key) => arr.reduce((sum, r) => sum + (r[key] || 0), 0) / arr.length;
+
+    const avgRSSI = avg(recentData, 'rssi_dbm');
+    const avgDownload = avg(recentData, 'download_mbps');
+    const avgJitter = avg(recentData, 'jitter_ms');
+    const avgPacketLoss = avg(recentData, 'packet_loss_pct');
+    const avgInputErrorRate = avg(recentData, 'input_error_rate');
+    const avgOutputErrorRate = avg(recentData, 'output_error_rate');
+    const validMCS = recentData.filter(r => r.mcs_index >= 0);
+    const avgMCS = validMCS.length > 0 ? avg(validMCS, 'mcs_index') : -1;
+    const roamCount = recentData.filter(r => r.bssid_changed === 1).length;
+
+    // Calculate issue scores (0-1 scale)
+    const issues = [];
+
+    // 1. Weak signal
+    if (avgRSSI < -70) {
+      issues.push({
+        factor: 'weak_signal',
+        score: Math.min(1, (-avgRSSI - 70) / 20),
+        value: Math.round(avgRSSI),
+        threshold: -70,
+        unit: 'dBm'
+      });
+    }
+
+    // 2. High error rate
+    const totalErrorRate = avgInputErrorRate + avgOutputErrorRate;
+    if (totalErrorRate > 0.005) {
+      issues.push({
+        factor: 'high_error_rate',
+        score: Math.min(1, totalErrorRate / 0.05),
+        value: (totalErrorRate * 100).toFixed(3),
+        threshold: 0.5,
+        unit: '%'
+      });
+    }
+
+    // 3. MCS below expected
+    if (avgMCS >= 0) {
+      const expectedMCS = avgRSSI > -50 ? 9 : avgRSSI > -60 ? 7 : avgRSSI > -70 ? 5 : 3;
+      const mcsDeficit = expectedMCS - avgMCS;
+      if (mcsDeficit > 2) {
+        issues.push({
+          factor: 'mcs_below_expected',
+          score: Math.min(1, mcsDeficit / 5),
+          value: avgMCS.toFixed(1),
+          expected: expectedMCS,
+          deficit: mcsDeficit.toFixed(1)
+        });
+      }
+    }
+
+    // 4. High jitter
+    if (avgJitter > 20) {
+      issues.push({
+        factor: 'high_jitter',
+        score: Math.min(1, (avgJitter - 20) / 50),
+        value: avgJitter.toFixed(1),
+        threshold: 20,
+        unit: 'ms'
+      });
+    }
+
+    // 5. Packet loss
+    if (avgPacketLoss > 0.5) {
+      issues.push({
+        factor: 'packet_loss',
+        score: Math.min(1, avgPacketLoss / 5),
+        value: avgPacketLoss.toFixed(2),
+        threshold: 0.5,
+        unit: '%'
+      });
+    }
+
+    // 6. Excessive roaming
+    if (roamCount > 3) {
+      issues.push({
+        factor: 'excessive_roaming',
+        score: Math.min(1, roamCount / 10),
+        value: roamCount,
+        threshold: 3,
+        unit: 'events/week'
+      });
+    }
+
+    // 7. Low speed despite good signal
+    if (avgRSSI > -60 && avgDownload < 50) {
+      issues.push({
+        factor: 'slow_despite_good_signal',
+        score: Math.min(1, (50 - avgDownload) / 50),
+        value: avgDownload.toFixed(1),
+        rssi: Math.round(avgRSSI),
+        unit: 'Mbps'
+      });
+    }
+
+    // Determine primary issue
+    issues.sort((a, b) => b.score - a.score);
+    const primaryIssue = issues.length > 0 ? issues[0] : null;
+
+    // Calculate overall confidence
+    const totalScore = issues.reduce((sum, i) => sum + i.score, 0);
+    const confidence = issues.length > 0 ?
+      Math.min(0.95, 0.5 + (primaryIssue.score * 0.3) + (Math.min(issues.length, 3) * 0.05)) : 0.1;
+
+    // Generate recommendations
+    const recommendations = [];
+
+    if (issues.find(i => i.factor === 'weak_signal')) {
+      recommendations.push('Move closer to the router or add a WiFi extender/mesh node');
+    }
+    if (issues.find(i => i.factor === 'high_error_rate')) {
+      recommendations.push('Check for interference sources (microwave, Bluetooth, neighboring WiFi)');
+    }
+    if (issues.find(i => i.factor === 'mcs_below_expected')) {
+      recommendations.push('Access point may be congested - try switching to a different channel or band');
+    }
+    if (issues.find(i => i.factor === 'high_jitter')) {
+      recommendations.push('Network congestion detected - check for bandwidth-heavy applications');
+    }
+    if (issues.find(i => i.factor === 'excessive_roaming')) {
+      recommendations.push('Device frequently switches between access points - check AP placement or signal overlap');
+    }
+    if (issues.find(i => i.factor === 'slow_despite_good_signal')) {
+      recommendations.push('Good signal but slow speeds suggests AP backhaul or ISP issue - test with wired connection');
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push('No significant issues detected - network performance appears normal');
+    }
+
+    res.json({
+      device_id,
+      generated_at: new Date().toISOString(),
+      data_points: recentData.length,
+      primary_issue: primaryIssue ? primaryIssue.factor : 'none',
+      confidence: confidence.toFixed(2),
+      factors: issues,
+      summary: {
+        avg_rssi: Math.round(avgRSSI),
+        avg_download: avgDownload.toFixed(1),
+        avg_mcs: avgMCS >= 0 ? avgMCS.toFixed(1) : 'N/A',
+        avg_error_rate: (totalErrorRate * 100).toFixed(3) + '%',
+        roam_count: roamCount
+      },
+      recommendations
+    });
+  } catch (err) {
+    console.error('Diagnose error:', err);
+    res.status(500).json({ error: 'Failed to generate diagnosis' });
+  }
+});
+
 // Device Data Export (CSV)
 app.get('/api/devices/:device_id/export', (req, res) => {
   const { device_id } = req.params;
@@ -1383,7 +1941,8 @@ app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      version: '3.0.0',
+      version: '3.1.0',
+      features: ['wifi_debugging', 'mcs_tracking', 'error_rates', 'roaming_detection'],
       total_results: count.count
     });
   } catch (err) {
@@ -1392,7 +1951,7 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Speed Monitor Server v3.0.0 running on port ${PORT}`);
+  console.log(`Speed Monitor Server v3.1.0 running on port ${PORT}`);
   console.log(`Dashboard: http://localhost:${PORT}`);
   console.log(`API: http://localhost:${PORT}/api`);
 });
