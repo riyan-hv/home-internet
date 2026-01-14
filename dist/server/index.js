@@ -1366,6 +1366,11 @@ app.get('/device/:device_id', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'my-device.html'));
 });
 
+// Serve setup/installation guide
+app.get('/setup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
+});
+
 // Serve dashboard
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
