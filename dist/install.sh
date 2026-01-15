@@ -62,20 +62,22 @@ fi
 
 # Download and install pre-built SpeedMonitor.app (native menu bar app)
 echo "Installing SpeedMonitor menu bar app..."
-SPEEDMONITOR_TEMP=$(mktemp -d)
+rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
 
-if curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o "$SPEEDMONITOR_TEMP/SpeedMonitor.app.zip"; then
-    # Unzip and install
-    unzip -q "$SPEEDMONITOR_TEMP/SpeedMonitor.app.zip" -d "$SPEEDMONITOR_TEMP"
-    rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
-    cp -r "$SPEEDMONITOR_TEMP/SpeedMonitor.app" /Applications/
-    echo "SpeedMonitor.app installed to /Applications"
+curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip
+if [[ -f /tmp/SpeedMonitor.app.zip ]]; then
+    unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/
+    if [[ -d /tmp/SpeedMonitor.app ]]; then
+        cp -r /tmp/SpeedMonitor.app /Applications/
+        echo "✓ SpeedMonitor.app installed to /Applications"
+    else
+        echo "✗ Failed to unzip SpeedMonitor.app"
+    fi
+    rm -f /tmp/SpeedMonitor.app.zip
+    rm -rf /tmp/SpeedMonitor.app
 else
-    echo "Warning: Could not download SpeedMonitor.app. WiFi SSID detection will use fallback."
+    echo "✗ Failed to download SpeedMonitor.app"
 fi
-
-# Cleanup temp directory
-rm -rf "$SPEEDMONITOR_TEMP"
 
 # Create launchd plist
 echo "Creating launchd service..."
@@ -149,6 +151,22 @@ EOF
     open /Applications/SpeedMonitor.app
 fi
 
+# Run the first speed test immediately so menu bar shows real data
+echo ""
+echo "Running initial speed test (this takes ~30 seconds)..."
+SPEED_MONITOR_SERVER="$SERVER_URL" "$BIN_DIR/speed_monitor.sh" 2>/dev/null &
+SPEEDTEST_PID=$!
+
+# Wait for speed test with a simple progress indicator
+for i in {1..40}; do
+    if ! kill -0 $SPEEDTEST_PID 2>/dev/null; then
+        break
+    fi
+    printf "."
+    sleep 1
+done
+echo " Done!"
+
 echo ""
 echo "=== Installation Complete ==="
 echo ""
@@ -163,8 +181,7 @@ echo ""
 if [[ -d "/Applications/SpeedMonitor.app" ]]; then
 echo "Menu Bar App:"
 echo "  - Click the menu bar icon to see speed stats"
-echo "  - Go to Settings to grant Location Services"
-echo "  - This enables WiFi network name detection"
+echo "  - Go to Settings → Grant Permission for WiFi name"
 echo ""
 fi
 echo "Commands:"
