@@ -1,4 +1,4 @@
-# Speed Monitor v3.1 - Organization Internet Monitoring
+# Speed Monitor v3.0.0 - Organization Internet Monitoring
 
 ## Overview
 
@@ -8,6 +8,7 @@ Speed Monitor is an automated internet performance tracking system for organizat
 - **Dashboard**: Real-time web dashboard with shadcn-inspired UI
 - **Menu Bar**: SwiftBar plugin showing live connection stats
 - **Self-Service Portal**: Employee-facing dashboard at `/my/:email`
+- **Self-Update**: Built-in update mechanism via `speed_monitor.sh --update`
 
 **Live URLs:**
 - Dashboard: https://home-internet-production.up.railway.app/
@@ -35,9 +36,10 @@ Speed Monitor is an automated internet performance tracking system for organizat
 ```
 home-internet/
 ├── CLAUDE.md                    # This file - project documentation
-├── speed_monitor.sh             # Main client script (v2.1)
+├── VERSION                      # Single source of truth for app version (3.0.0)
+├── speed_monitor.sh             # Main client script (v3.0.0)
 ├── com.speedmonitor.plist       # launchd configuration
-├── swiftbar-plugin.sh           # SwiftBar menu bar integration
+├── swiftbar-plugin.sh           # SwiftBar menu bar integration (v3.0.0)
 │
 ├── dist/
 │   ├── install.sh               # One-line installer for employees
@@ -62,13 +64,14 @@ home-internet/
 
 | File | Purpose |
 |------|---------|
-| `speed_monitor.sh` | Runs speedtest-cli, collects WiFi metrics, POSTs to server |
+| `VERSION` | Single source of truth for unified version (3.0.0) |
+| `speed_monitor.sh` | Runs speedtest-cli, collects WiFi metrics, POSTs to server, self-update |
+| `swiftbar-plugin.sh` | Menu bar widget showing current speeds, update notifications |
 | `dist/install.sh` | One-line installer: installs Homebrew, speedtest-cli, sets up launchd |
 | `dist/server/index.js` | Express API with SQLite, anomaly detection, Slack alerts |
 | `dashboard.html` | Organization-wide stats, charts, device fleet view |
 | `my-device.html` | Per-device stats, recommendations, CSV export |
 | `setup.html` | Installation guide with copy-paste commands |
-| `swiftbar-plugin.sh` | Menu bar widget showing current speeds |
 
 ---
 
@@ -82,6 +85,7 @@ home-internet/
 | GET | `/api/stats/vpn` | VPN distribution and speed comparison |
 | GET | `/api/stats/wifi` | WiFi band/channel/SSID stats |
 | GET | `/api/stats/jitter` | Jitter distribution + problem devices |
+| GET | `/api/version` | Current app version and min client version |
 
 ### v3.0 Analytics Endpoints
 | Method | Endpoint | Purpose |
@@ -170,7 +174,7 @@ launchctl load ~/Library/LaunchAgents/com.speedmonitor.plist
 <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 ```
 
-### 3. Client: WiFi info empty
+### 3. Client: WiFi info empty (pre-Sequoia)
 **Cause**: wifi_info Swift helper not compiled
 **Solution**:
 ```bash
@@ -178,6 +182,16 @@ swiftc -O -o ~/.local/bin/wifi_info \
   ~/.local/share/nkspeedtest/wifi_info.swift \
   -framework CoreWLAN -framework Foundation
 ```
+
+### 3b. Client: WiFi info empty on macOS Sequoia
+**Cause**: CoreWLAN requires Location Services permission (denied by default), and `airport` command was removed in Sequoia
+**Solution**: v3.0.0 uses `system_profiler SPAirPortDataType` as fallback - no permissions needed
+```bash
+# Verify WiFi detection works
+system_profiler SPAirPortDataType | grep -A 10 "Current Network"
+# Should show: Signal / Noise, MCS Index, Channel, etc.
+```
+**Note**: SSID is redacted by macOS privacy, but all metrics (RSSI, MCS, Channel, Band) are available
 
 ### 4. Server: Database reset on deploy
 **Cause**: Railway ephemeral filesystem - SQLite file deleted on redeploy
@@ -349,6 +363,15 @@ tail -20 ~/.local/share/nkspeedtest/speed_log.csv
 # Run test manually
 ~/.local/bin/speed_monitor.sh
 
+# Check version
+~/.local/bin/speed_monitor.sh --version
+
+# Check for updates
+~/.local/bin/speed_monitor.sh --check-update
+
+# Update to latest version
+~/.local/bin/speed_monitor.sh --update
+
 # Check service status
 launchctl list | grep speedmonitor
 
@@ -361,6 +384,9 @@ launchctl load ~/Library/LaunchAgents/com.speedmonitor.plist
 
 # Check device ID
 cat ~/.config/nkspeedtest/device_id
+
+# Verify WiFi detection (macOS Sequoia)
+system_profiler SPAirPortDataType | grep -A 10 "Current Network"
 ```
 
 ---
@@ -372,12 +398,41 @@ cat ~/.config/nkspeedtest/device_id
 | 1.0 | - | Basic speed logging to CSV |
 | 2.0 | - | Server upload, WiFi metrics, VPN detection |
 | 2.1 | 2026-01 | Added user_email support, fixed netstat dash handling |
-| 3.0 | 2026-01 | Anomaly detection, Slack alerts, ISP comparison, shadcn UI |
-| 3.1 | 2026-01 | Employee self-service portal, median jitter, local time display, speed timeline charts |
+| 3.0.0 | 2026-01 | **Unified versioning across all components**, self-update mechanism, macOS Sequoia WiFi fix |
+
+### v3.0.0 Highlights
+- **Unified Version**: Single VERSION file controls all components (speed_monitor, swiftbar, installer, server)
+- **Self-Update**: `speed_monitor.sh --update` downloads and installs latest version
+- **macOS Sequoia Fix**: Uses `system_profiler SPAirPortDataType` when CoreWLAN lacks permissions
+- **Atomic Updates**: Temp file + mv pattern prevents corruption, timestamped backups
+- **Version API**: `/api/version` endpoint for programmatic version checking
 
 ---
 
-## Key Features (v3.1)
+## Key Features (v3.0.0)
+
+### Self-Update Mechanism
+```bash
+# Check current version
+speed_monitor.sh --version
+# Output: Speed Monitor v3.0.0
+
+# Check for updates
+speed_monitor.sh --check-update
+# Output: Update available: 3.0.0 → 3.1.0
+
+# Install update (atomic, with backup)
+speed_monitor.sh --update
+# Downloads from GitHub, validates, creates timestamped backup, installs atomically
+```
+
+**SwiftBar Integration**: Menu bar shows 🔄 badge when update available. Click "Install Update" to update.
+
+### macOS Sequoia WiFi Detection
+WiFi metrics collection uses a 3-tier fallback:
+1. **CoreWLAN Swift helper** - Best data, but requires Location Services permission
+2. **airport command** - Legacy, removed in macOS Sequoia
+3. **system_profiler SPAirPortDataType** - Works on Sequoia, no permissions needed
 
 ### Employee Self-Service Portal
 - **URL**: `/my` → enter email → `/my/:email`
@@ -393,11 +448,14 @@ cat ~/.config/nkspeedtest/device_id
 - **Solution**: Use median jitter (typically ~4ms) for accurate representation
 - **API**: Returns both `avg_jitter` and `median_jitter`
 
-### Data Collection (v2.1 client)
+### Data Collection (v3.0.0 client)
 | Metric | Source | Notes |
 |--------|--------|-------|
-| MCS Index | system_profiler | WiFi link quality |
+| MCS Index | system_profiler / wifi_info | WiFi link quality (0-11) |
 | Spatial Streams | Calculated | From MCS index |
+| RSSI | system_profiler / wifi_info | Signal strength in dBm |
+| SNR | Calculated | Signal-to-noise ratio |
+| Channel/Band/Width | system_profiler | WiFi channel details |
 | Interface Errors | netstat -I en0 | Input/output error rates |
 | TCP Retransmits | netstat -s | Connection quality |
 | BSSID Changes | Tracked | Roaming detection |
