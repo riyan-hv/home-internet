@@ -1,12 +1,13 @@
 #!/bin/bash
 #
-# Speed Monitor v2.2.0 - Organization-Wide Internet Speed Monitoring
+# Speed Monitor v2.3.0 - Organization-Wide Internet Speed Monitoring
 # Enhanced data collection for fleet deployment (300+ devices)
+# v2.3.0: Bug fixes - jitter percentiles, TCP retransmits delta, JSON escaping, status field
 # v2.2.0: Fixed VPN detection - now checks for active tunnel, not just process running
 # v2.1.0: Added WiFi debugging metrics (MCS, error rates, BSSID tracking)
 #
 
-VERSION="2.2.0"
+VERSION="2.3.0"
 
 # Configuration
 DATA_DIR="$HOME/.local/share/nkspeedtest"
@@ -260,18 +261,32 @@ get_interface_stats() {
     echo "OUTPUT_ERROR_RATE=$output_error_rate"
 }
 
-# Get TCP retransmission count
+# Get TCP retransmission count (delta since last test, not cumulative)
 get_tcp_retransmits() {
     local tcp_retransmits=0
+    local tcp_retransmits_delta=0
 
-    # Parse netstat -s for TCP retransmit stats
+    # Parse netstat -s for TCP retransmit stats (cumulative since boot)
     local retransmit_line=$(netstat -s 2>/dev/null | grep "data packets.*retransmitted" | head -1)
 
     if [[ -n "$retransmit_line" ]]; then
         tcp_retransmits=$(echo "$retransmit_line" | awk '{print $1}')
     fi
 
-    echo "TCP_RETRANSMITS=${tcp_retransmits:-0}"
+    # Calculate delta since last test
+    local prev_retransmits_file="$DATA_DIR/prev_tcp_retransmits"
+    if [[ -f "$prev_retransmits_file" ]]; then
+        local prev_retransmits=$(cat "$prev_retransmits_file")
+        [[ -z "$prev_retransmits" ]] && prev_retransmits=0
+        tcp_retransmits_delta=$((tcp_retransmits - prev_retransmits))
+        # Handle counter reset (reboot)
+        [[ $tcp_retransmits_delta -lt 0 ]] && tcp_retransmits_delta=$tcp_retransmits
+    fi
+
+    # Save current value for next run
+    echo "$tcp_retransmits" > "$prev_retransmits_file"
+
+    echo "TCP_RETRANSMITS=${tcp_retransmits_delta:-0}"
 }
 
 # Track BSSID changes (roaming detection)
@@ -341,47 +356,53 @@ run_ping_test() {
     local rtt_values=$(echo "$detailed_ping" | grep "time=" | sed 's/.*time=\([0-9.]*\).*/\1/')
 
     # Calculate jitter using awk
+    # Bug fix: P50/P95 now calculated on jitter deltas, not RTT values
     local jitter_stats=$(echo "$rtt_values" | awk '
-    BEGIN { n=0; prev=0; sum_diff=0 }
+    BEGIN { n=0; prev=0; jitter_n=0 }
     NF > 0 {
-        values[n] = $1
+        rtt = $1
         if (n > 0) {
-            diff = ($1 > prev) ? ($1 - prev) : (prev - $1)
-            sum_diff += diff
+            diff = (rtt > prev) ? (rtt - prev) : (prev - rtt)
+            jitter_values[jitter_n] = diff
+            jitter_n++
         }
-        prev = $1
+        prev = rtt
         n++
     }
     END {
-        if (n <= 1) {
+        if (jitter_n <= 0) {
             print "0 0 0"
             exit
         }
 
         # Mean jitter
-        jitter = sum_diff / (n - 1)
+        sum = 0
+        for (i = 0; i < jitter_n; i++) {
+            sum += jitter_values[i]
+        }
+        mean_jitter = sum / jitter_n
 
-        # Sort for percentiles
-        for (i = 0; i < n; i++) {
-            for (j = i + 1; j < n; j++) {
-                if (values[i] > values[j]) {
-                    tmp = values[i]
-                    values[i] = values[j]
-                    values[j] = tmp
+        # Sort jitter values for percentiles
+        for (i = 0; i < jitter_n; i++) {
+            for (j = i + 1; j < jitter_n; j++) {
+                if (jitter_values[i] > jitter_values[j]) {
+                    tmp = jitter_values[i]
+                    jitter_values[i] = jitter_values[j]
+                    jitter_values[j] = tmp
                 }
             }
         }
 
-        # P50 (median)
-        p50_idx = int(n * 0.5)
-        p50 = values[p50_idx]
+        # P50 (median) of jitter
+        p50_idx = int(jitter_n * 0.5)
+        p50 = jitter_values[p50_idx]
 
-        # P95
-        p95_idx = int(n * 0.95)
-        if (p95_idx >= n) p95_idx = n - 1
-        p95 = values[p95_idx]
+        # P95 of jitter
+        p95_idx = int(jitter_n * 0.95)
+        if (p95_idx >= jitter_n) p95_idx = jitter_n - 1
+        p95 = jitter_values[p95_idx]
 
-        printf "%.2f %.2f %.2f\n", jitter, p50, p95
+        printf "%.2f %.2f %.2f\n", mean_jitter, p50, p95
     }')
 
     local jitter=$(echo "$jitter_stats" | awk '{print $1}')
@@ -407,9 +428,25 @@ get_local_ip() {
     echo "${ip:-unknown}"
 }
 
+# Escape string for JSON (handle quotes, backslashes, newlines)
+json_escape() {
+    local str="$1"
+    str="${str//\\/\\\\}"      # Escape backslashes first
+    str="${str//\"/\\\"}"      # Escape quotes
+    str="${str//$'\n'/\\n}"    # Escape newlines
+    str="${str//$'\r'/\\r}"    # Escape carriage returns
+    str="${str//$'\t'/\\t}"    # Escape tabs
+    echo "$str"
+}
+
 # Build JSON payload
 build_json_payload() {
     local user_email=$(get_user_email)
+    # Escape strings that might contain special characters
+    local safe_ssid=$(json_escape "$SSID")
+    local safe_vpn_name=$(json_escape "$VPN_NAME")
+    local safe_errors=$(json_escape "$ERRORS")
+
     local json="{"
     json+="\"timestamp_utc\":\"$TIMESTAMP_UTC\","
     json+="\"device_id\":\"$DEVICE_ID\","
@@ -418,7 +455,7 @@ build_json_payload() {
     json+="\"app_version\":\"$VERSION\","
     json+="\"timezone\":\"$TIMEZONE\","
     json+="\"interface\":\"$INTERFACE\","
-    json+="\"ssid\":\"$SSID\","
+    json+="\"ssid\":\"$safe_ssid\","
     json+="\"bssid\":\"$BSSID\","
     json+="\"band\":\"$BAND\","
     json+="\"channel\":$CHANNEL,"
@@ -439,7 +476,7 @@ build_json_payload() {
     json+="\"download_mbps\":$DOWNLOAD_MBPS,"
     json+="\"upload_mbps\":$UPLOAD_MBPS,"
     json+="\"vpn_status\":\"$VPN_STATUS\","
-    json+="\"vpn_name\":\"$VPN_NAME\","
+    json+="\"vpn_name\":\"$safe_vpn_name\","
     json+="\"input_errors\":$INPUT_ERRORS,"
     json+="\"output_errors\":$OUTPUT_ERRORS,"
     json+="\"input_error_rate\":$INPUT_ERROR_RATE,"
@@ -447,7 +484,8 @@ build_json_payload() {
     json+="\"tcp_retransmits\":$TCP_RETRANSMITS,"
     json+="\"bssid_changed\":$BSSID_CHANGED,"
     json+="\"roam_count\":$ROAM_COUNT,"
-    json+="\"errors\":\"$ERRORS\""
+    json+="\"errors\":\"$safe_errors\","
+    json+="\"status\":\"$STATUS\""
     json+="}"
     echo "$json"
 }
@@ -455,6 +493,7 @@ build_json_payload() {
 # Main collection function
 collect_metrics() {
     local errors=""
+    STATUS="pending"  # Initialize status
 
     log "Starting speed test (v$VERSION)..."
 
