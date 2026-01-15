@@ -85,17 +85,21 @@ class WiFiManager: ObservableObject {
 
     func outputForScript() -> String {
         refresh()
+        let snr = rssi - noise
         return """
         INTERFACE=en0
         POWER=on
         CONNECTED=\(isConnected)
         SSID=\(ssid)
         BSSID=\(bssid)
-        RSSI=\(rssi)
-        NOISE=\(noise)
+        RSSI_DBM=\(rssi)
+        NOISE_DBM=\(noise)
+        SNR_DB=\(snr)
         CHANNEL=\(channel)
         BAND=\(band)
-        TX_RATE=\(txRate)
+        WIDTH_MHZ=0
+        TX_RATE_MBPS=\(txRate)
+        MCS_INDEX=-1
         """
     }
 }

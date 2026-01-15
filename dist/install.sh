@@ -1,5 +1,5 @@
 #!/bin/bash
-# Speed Monitor v3.0.0 - One-line installer for employees
+# Speed Monitor v3.1.0 - One-line installer for employees
 # Usage: curl -fsSL https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/install.sh | bash
 
 set -e
@@ -9,8 +9,9 @@ SCRIPT_DIR="$HOME/.local/share/nkspeedtest"
 CONFIG_DIR="$HOME/.config/nkspeedtest"
 BIN_DIR="$HOME/.local/bin"
 PLIST_NAME="com.speedmonitor.plist"
+MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
 
-echo "=== Speed Monitor v3.0.0 Installer ==="
+echo "=== Speed Monitor v3.1.0 Installer ==="
 echo ""
 
 # Create directories
@@ -57,6 +58,77 @@ else
     swiftc -O -o "$BIN_DIR/wifi_info" "$SCRIPT_DIR/wifi_info.swift" -framework CoreWLAN -framework Foundation 2>/dev/null || echo "WiFi helper compilation skipped (will use fallback)"
 fi
 
+# Build and install SpeedMonitor.app (native menu bar app with Location Services)
+echo "Building SpeedMonitor menu bar app..."
+SPEEDMONITOR_BUILD_TEMP=$(mktemp -d)
+
+# Download Swift source and build script
+curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/WiFiHelper/SpeedMonitorMenuBar.swift" -o "$SPEEDMONITOR_BUILD_TEMP/SpeedMonitorMenuBar.swift"
+
+# Create build script inline (simpler than downloading)
+APP_BUNDLE="$SPEEDMONITOR_BUILD_TEMP/SpeedMonitor.app"
+mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+# Create Info.plist
+cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST_EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.speedmonitor.menubar</string>
+    <key>CFBundleName</key>
+    <string>Speed Monitor</string>
+    <key>CFBundleDisplayName</key>
+    <string>Speed Monitor</string>
+    <key>CFBundleVersion</key>
+    <string>3.1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>3.1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>SpeedMonitor</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSLocationUsageDescription</key>
+    <string>Speed Monitor needs Location Services to detect your WiFi network name (SSID). This is required by macOS. Your location is never tracked or stored.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Speed Monitor needs Location Services to detect your WiFi network name (SSID). This is required by macOS. Your location is never tracked or stored.</string>
+</dict>
+</plist>
+PLIST_EOF
+
+# Create PkgInfo
+echo "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
+
+# Compile Swift code
+if swiftc -O -parse-as-library \
+    -o "$APP_BUNDLE/Contents/MacOS/SpeedMonitor" \
+    "$SPEEDMONITOR_BUILD_TEMP/SpeedMonitorMenuBar.swift" \
+    -framework SwiftUI \
+    -framework CoreWLAN \
+    -framework CoreLocation \
+    -framework AppKit 2>/dev/null; then
+
+    # Install to Applications folder
+    rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+    cp -r "$APP_BUNDLE" /Applications/SpeedMonitor.app
+    echo "SpeedMonitor.app installed to /Applications"
+else
+    echo "Warning: SpeedMonitor.app build failed (Swift toolchain issue). WiFi detection will use fallback."
+fi
+
+# Cleanup temp directory
+rm -rf "$SPEEDMONITOR_BUILD_TEMP"
+
 # Create launchd plist
 echo "Creating launchd service..."
 cat > "$HOME/Library/LaunchAgents/$PLIST_NAME" << EOF
@@ -95,6 +167,40 @@ launchctl unload "$HOME/Library/LaunchAgents/$PLIST_NAME" 2>/dev/null || true
 # Load the service
 launchctl load "$HOME/Library/LaunchAgents/$PLIST_NAME"
 
+# Create launchd plist for menu bar app (auto-launch on login)
+if [[ -d "/Applications/SpeedMonitor.app" ]]; then
+    echo "Setting up menu bar app to launch on login..."
+    cat > "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.speedmonitor.menubar</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/SpeedMonitor.app/Contents/MacOS/SpeedMonitor</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$SCRIPT_DIR/menubar_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>$SCRIPT_DIR/menubar_stderr.log</string>
+</dict>
+</plist>
+EOF
+
+    # Unload existing menu bar service if present
+    launchctl unload "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" 2>/dev/null || true
+
+    # Load the menu bar service
+    launchctl load "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME"
+
+    # Also launch the app now
+    open /Applications/SpeedMonitor.app
+fi
+
 echo ""
 echo "=== Installation Complete ==="
 echo ""
@@ -102,9 +208,17 @@ echo "Speed Monitor is now running and will:"
 echo "  - Run a speed test every 10 minutes"
 echo "  - Upload results to: $SERVER_URL"
 echo "  - Store local logs in: $SCRIPT_DIR"
+echo "  - Show live stats in your menu bar"
 echo ""
 echo "View the dashboard: $SERVER_URL"
 echo ""
+if [[ -d "/Applications/SpeedMonitor.app" ]]; then
+echo "Menu Bar App:"
+echo "  - Click the menu bar icon to see speed stats"
+echo "  - Go to Settings to grant Location Services"
+echo "  - This enables WiFi network name detection"
+echo ""
+fi
 echo "Commands:"
 echo "  Run test now:  SPEED_MONITOR_SERVER=$SERVER_URL $BIN_DIR/speed_monitor.sh"
 echo "  View logs:     tail -f $SCRIPT_DIR/launchd_stdout.log"

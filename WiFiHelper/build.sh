@@ -5,19 +5,27 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 APP_NAME="SpeedMonitor"
 BUILD_DIR="$SCRIPT_DIR/build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
-echo "Building Speed Monitor Menu Bar App..."
+# Read version from VERSION file
+if [[ -f "$PROJECT_ROOT/VERSION" ]]; then
+    VERSION=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
+else
+    VERSION="3.1.0"
+fi
+
+echo "Building Speed Monitor Menu Bar App v$VERSION..."
 
 # Clean previous build
 rm -rf "$BUILD_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-# Create Info.plist for menu bar app
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
+# Create Info.plist for menu bar app (with version from VERSION file)
+cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -29,9 +37,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'EOF'
     <key>CFBundleDisplayName</key>
     <string>Speed Monitor</string>
     <key>CFBundleVersion</key>
-    <string>3.0.0</string>
+    <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>
-    <string>3.0.0</string>
+    <string>$VERSION</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>

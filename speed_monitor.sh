@@ -199,9 +199,20 @@ get_user_email() {
     fi
 }
 
-# Get WiFi details via CoreWLAN Swift helper or system_profiler fallback
+# Get WiFi details via SpeedMonitor.app, Swift helper, or system_profiler fallback
 get_wifi_details() {
-    # Try Swift helper first (if it has Location Services permission)
+    # Priority 1: SpeedMonitor.app (best: has Location Services UI for SSID)
+    local speedmonitor_app="/Applications/SpeedMonitor.app/Contents/MacOS/SpeedMonitor"
+    if [[ -x "$speedmonitor_app" ]]; then
+        local wifi_output=$("$speedmonitor_app" --output 2>/dev/null)
+        # Check if helper returned valid data (CONNECTED=true)
+        if echo "$wifi_output" | grep -q "CONNECTED=true"; then
+            echo "$wifi_output"
+            return
+        fi
+    fi
+
+    # Priority 2: wifi_info Swift helper (if it has Location Services permission)
     if [[ -x "$WIFI_HELPER" ]]; then
         local wifi_output=$("$WIFI_HELPER" 2>/dev/null)
         # Check if helper returned valid data (CONNECTED=true)
