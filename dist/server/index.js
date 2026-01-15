@@ -216,7 +216,8 @@ const columnsToAdd = [
   { name: 'output_error_rate', type: 'REAL DEFAULT 0' },
   { name: 'tcp_retransmits', type: 'BIGINT DEFAULT 0' },
   { name: 'bssid_changed', type: 'INTEGER DEFAULT 0' },
-  { name: 'roam_count', type: 'INTEGER DEFAULT 0' }
+  { name: 'roam_count', type: 'INTEGER DEFAULT 0' },
+  { name: 'user_email', type: 'TEXT' }
 ];
 
 for (const col of columnsToAdd) {
