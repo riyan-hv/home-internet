@@ -113,6 +113,7 @@ class SpeedDataManager: ObservableObject {
     @Published var lastTest: Date?
     @Published var vpnStatus: String = ""
     @Published var updateAvailable: Bool = false
+    @Published var isRunningTest: Bool = false
 
     private var refreshTimer: Timer?
 
@@ -121,6 +122,34 @@ class SpeedDataManager: ObservableObject {
         // Refresh every 30 seconds
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.refresh()
+        }
+    }
+
+    func runSpeedTest() {
+        guard !isRunningTest else { return }
+        isRunningTest = true
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let scriptPath = NSHomeDirectory() + "/.local/bin/speed_monitor.sh"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/bash")
+            process.arguments = [scriptPath]
+            process.environment = [
+                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                "SPEED_MONITOR_SERVER": "https://home-internet-production.up.railway.app"
+            ]
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                print("Failed to run speed test: \(error)")
+            }
+
+            DispatchQueue.main.async {
+                self?.isRunningTest = false
+                self?.refresh()
+            }
         }
     }
 
@@ -394,6 +423,15 @@ struct MenuBarView: View {
             Divider()
 
             // Actions
+            Button(action: { speedData.runSpeedTest() }) {
+                HStack {
+                    Image(systemName: speedData.isRunningTest ? "hourglass" : "bolt.fill")
+                    Text(speedData.isRunningTest ? "Running Test..." : "Run Speed Test")
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(speedData.isRunningTest)
+
             Button(action: { speedData.refresh(); wifiManager.refresh() }) {
                 HStack {
                     Image(systemName: "arrow.clockwise")
