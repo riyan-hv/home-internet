@@ -650,6 +650,211 @@
             .fleet-filters input { flex: 1; width: auto; }
             .detail-panel { width: 100%; right: -100%; }
         }
+
+        /* ============================================ */
+        /* WiFi Analysis Section */
+        /* ============================================ */
+
+        .wifi-section-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--foreground);
+        }
+
+        .wifi-stats-grid {
+            margin-bottom: 24px;
+        }
+
+        /* Band Badges */
+        .band-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            border-radius: 9999px;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        .band-5ghz {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--info);
+        }
+
+        .band-24ghz {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+        }
+
+        .band-6ghz {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+
+        /* WiFi SSID Display */
+        .wifi-ssid {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .ssid-name {
+            font-weight: 500;
+        }
+
+        .bssid {
+            font-size: 0.7rem;
+            color: var(--muted-foreground);
+            font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+        }
+
+        /* Signal Strength Indicator */
+        .signal-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .signal-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 16px;
+        }
+
+        .signal-bars .bar {
+            width: 3px;
+            background: var(--muted);
+            border-radius: 1px;
+        }
+
+        .signal-bars .bar:nth-child(1) { height: 4px; }
+        .signal-bars .bar:nth-child(2) { height: 8px; }
+        .signal-bars .bar:nth-child(3) { height: 12px; }
+        .signal-bars .bar:nth-child(4) { height: 16px; }
+
+        .signal-bars .bar.active {
+            background: var(--success);
+        }
+
+        .signal-bars.weak .bar.active {
+            background: var(--destructive);
+        }
+
+        .signal-bars.fair .bar.active {
+            background: var(--warning);
+        }
+
+        .signal-value {
+            font-size: 0.8125rem;
+            color: var(--muted-foreground);
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Sortable Table Headers */
+        .device-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s ease;
+        }
+
+        .device-table th.sortable:hover {
+            background: var(--muted);
+        }
+
+        .sort-arrow {
+            font-size: 0.65rem;
+            color: var(--muted-foreground);
+            margin-left: 4px;
+            opacity: 0.3;
+            transition: opacity 0.15s ease;
+        }
+
+        .device-table th.sortable:hover .sort-arrow {
+            opacity: 0.6;
+        }
+
+        .sort-arrow.active {
+            opacity: 1;
+            color: var(--info);
+        }
+
+        /* WiFi Recommendations */
+        .wifi-recommendations {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .recommendation-card {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            padding: 16px 20px;
+            border-radius: var(--radius);
+            border: 1px solid;
+        }
+
+        .recommendation-card.severity-high,
+        .recommendation-card.severity-critical {
+            background: rgba(239, 68, 68, 0.08);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .recommendation-card.severity-medium {
+            background: rgba(245, 158, 11, 0.08);
+            border-color: rgba(245, 158, 11, 0.2);
+        }
+
+        .recommendation-card.severity-low {
+            background: rgba(59, 130, 246, 0.08);
+            border-color: rgba(59, 130, 246, 0.2);
+        }
+
+        .rec-icon {
+            font-size: 24px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .rec-content {
+            flex: 1;
+        }
+
+        .rec-message {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--foreground);
+        }
+
+        .rec-suggestion {
+            font-size: 0.875rem;
+            color: var(--muted-foreground);
+            line-height: 1.5;
+        }
+
+        /* Chart row for side-by-side layout */
+        .chart-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .chart-row .chart-section {
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 900px) {
+            .chart-row {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -714,6 +919,112 @@
             </div>
             <div class="chart-container">
                 <canvas id="speedChart"></canvas>
+            </div>
+        </div>
+
+        <!-- WiFi Network Analysis Section -->
+        <div class="wifi-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                <circle cx="12" cy="20" r="1"/>
+            </svg>
+            WiFi Network Analysis
+        </div>
+
+        <!-- WiFi Quick Stats -->
+        <div class="stats-grid wifi-stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">5GHz Adoption</div>
+                <div class="stat-value">
+                    <span id="band5GhzPct">--</span>
+                    <span class="stat-unit">%</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">SSIDs Detected</div>
+                <div class="stat-value" id="ssidCount">--</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Signal</div>
+                <div class="stat-value">
+                    <span id="avgSignal">--</span>
+                    <span class="stat-unit">dBm</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Channels Used</div>
+                <div class="stat-value" id="channelCount">--</div>
+            </div>
+        </div>
+
+        <!-- Band Distribution Chart -->
+        <div class="chart-row">
+            <div class="chart-section">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+                            <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+                        </svg>
+                        Band Distribution
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 220px;">
+                    <canvas id="bandChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-section">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="3" y1="9" x2="21" y2="9"/>
+                            <line x1="9" y1="21" x2="9" y2="9"/>
+                        </svg>
+                        Channel Usage
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 220px;">
+                    <canvas id="channelChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- WiFi Recommendations (Conditional) -->
+        <div id="wifiRecommendationsContainer"></div>
+
+        <!-- Access Points Table -->
+        <div class="fleet-section" style="margin-bottom: 24px;">
+            <div class="fleet-header">
+                <div class="fleet-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                        <circle cx="12" cy="20" r="1"/>
+                    </svg>
+                    Access Points
+                    <span class="fleet-count" id="apCount">(0)</span>
+                </div>
+                <div class="fleet-filters">
+                    <select id="filterBand" onchange="filterWiFiData()">
+                        <option value="">All Bands</option>
+                        <option value="5GHz">5GHz Only</option>
+                        <option value="2.4GHz">2.4GHz Only</option>
+                        <option value="6GHz">6GHz Only</option>
+                    </select>
+                    <select id="filterSignal" onchange="filterWiFiData()">
+                        <option value="">All Signals</option>
+                        <option value="excellent">Excellent (≥-50 dBm)</option>
+                        <option value="good">Good (-50 to -70)</option>
+                        <option value="weak">Weak (≤-70 dBm)</option>
+                    </select>
+                    <input type="text" id="searchSSID" placeholder="Search SSID..." oninput="filterWiFiData()">
+                </div>
+            </div>
+            <div id="wifiTableContainer">
+                <div class="loading">Loading WiFi data...</div>
             </div>
         </div>
 
@@ -1327,22 +1638,463 @@
             return `${days}d ago`;
         }
 
+        // ============================================
+        // WiFi Analysis Functions
+        // ============================================
+
+        let wifiData = { byAccessPoint: [], bySSID: [], bandDistribution: [] };
+        let wifiRecommendations = [];
+        let bandChart = null;
+        let channelChart = null;
+        let wifiSortColumn = 'device_count';
+        let wifiSortDirection = 'desc';
+
+        // Initialize Band Distribution Chart
+        function initBandChart() {
+            const ctx = document.getElementById('bandChart')?.getContext('2d');
+            if (!ctx) return;
+
+            bandChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',   // 5GHz - blue
+                            'rgba(245, 158, 11, 0.8)',  // 2.4GHz - orange
+                            'rgba(34, 197, 94, 0.8)'    // 6GHz - green
+                        ],
+                        borderColor: '#18181b',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#a1a1aa',
+                                padding: 15,
+                                font: { size: 12, family: 'Inter' },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#18181b',
+                            titleColor: '#fafafa',
+                            bodyColor: '#a1a1aa',
+                            borderColor: '#27272a',
+                            borderWidth: 1,
+                            padding: 12,
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const dataset = context.dataset.data;
+                                    const total = dataset.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return ` ${label}: ${value} tests (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize Channel Usage Chart
+        function initChannelChart() {
+            const ctx = document.getElementById('channelChart')?.getContext('2d');
+            if (!ctx) return;
+
+            channelChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Tests',
+                        data: [],
+                        backgroundColor: [],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#18181b',
+                            titleColor: '#fafafa',
+                            bodyColor: '#a1a1aa',
+                            borderColor: '#27272a',
+                            borderWidth: 1,
+                            padding: 12,
+                            callbacks: {
+                                title: function(context) {
+                                    return `Channel ${context[0].label}`;
+                                },
+                                label: function(context) {
+                                    return ` ${context.parsed.y} tests`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#71717a', font: { size: 10 } }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(39, 39, 42, 0.5)', drawBorder: false },
+                            ticks: { color: '#71717a', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load WiFi Data from API
+        async function loadWiFiData() {
+            try {
+                const [wifiRes, recsRes] = await Promise.all([
+                    fetch('/api/stats/wifi'),
+                    fetch('/api/recommendations/wifi')
+                ]);
+
+                if (!wifiRes.ok) throw new Error('WiFi API failed');
+
+                wifiData = await wifiRes.json();
+                wifiRecommendations = recsRes.ok ? await recsRes.json() : [];
+
+                updateWiFiStatsCards();
+                updateBandChart();
+                updateChannelChart();
+                renderWiFiRecommendations();
+                filterWiFiData();
+
+            } catch (err) {
+                console.error('Failed to load WiFi data:', err);
+                const container = document.getElementById('wifiTableContainer');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                                <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                            </svg>
+                            <p>No WiFi data available yet</p>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Update WiFi Stats Cards
+        function updateWiFiStatsCards() {
+            const { bySSID, byAccessPoint, bandDistribution } = wifiData;
+
+            // SSID count
+            const ssidCountEl = document.getElementById('ssidCount');
+            if (ssidCountEl) ssidCountEl.textContent = bySSID?.length || 0;
+
+            // 5GHz adoption percentage
+            const total = bandDistribution?.reduce((sum, b) => sum + b.count, 0) || 0;
+            const band5GHz = bandDistribution?.find(b => b.band === '5GHz');
+            const pct5GHz = band5GHz && total > 0 ? Math.round((band5GHz.count / total) * 100) : 0;
+            const pctEl = document.getElementById('band5GhzPct');
+            if (pctEl) pctEl.textContent = pct5GHz;
+
+            // Average signal strength
+            const validAPs = byAccessPoint?.filter(ap => ap.avg_rssi && ap.avg_rssi !== 0) || [];
+            const avgRssi = validAPs.length > 0
+                ? Math.round(validAPs.reduce((sum, ap) => sum + ap.avg_rssi, 0) / validAPs.length)
+                : 0;
+            const signalEl = document.getElementById('avgSignal');
+            if (signalEl) signalEl.textContent = avgRssi || '--';
+
+            // Unique channels count
+            const channels = new Set(byAccessPoint?.filter(ap => ap.channel > 0).map(ap => ap.channel) || []);
+            const channelEl = document.getElementById('channelCount');
+            if (channelEl) channelEl.textContent = channels.size || 0;
+        }
+
+        // Update Band Distribution Chart
+        function updateBandChart() {
+            if (!bandChart) return;
+
+            const { bandDistribution } = wifiData;
+
+            if (!bandDistribution || bandDistribution.length === 0) {
+                bandChart.data.labels = [];
+                bandChart.data.datasets[0].data = [];
+                bandChart.update();
+                return;
+            }
+
+            // Sort bands: 5GHz, 2.4GHz, 6GHz
+            const bandOrder = { '5GHz': 1, '2.4GHz': 2, '6GHz': 3 };
+            const sorted = [...bandDistribution].sort((a, b) =>
+                (bandOrder[a.band] || 99) - (bandOrder[b.band] || 99)
+            );
+
+            bandChart.data.labels = sorted.map(b => b.band);
+            bandChart.data.datasets[0].data = sorted.map(b => b.count);
+            bandChart.update();
+        }
+
+        // Update Channel Usage Chart
+        function updateChannelChart() {
+            if (!channelChart) return;
+
+            const { byAccessPoint } = wifiData;
+
+            if (!byAccessPoint || byAccessPoint.length === 0) {
+                channelChart.data.labels = [];
+                channelChart.data.datasets[0].data = [];
+                channelChart.update();
+                return;
+            }
+
+            // Group by channel
+            const channelMap = {};
+            byAccessPoint.forEach(ap => {
+                if (ap.channel && ap.channel > 0) {
+                    if (!channelMap[ap.channel]) {
+                        channelMap[ap.channel] = { count: 0, band: ap.band };
+                    }
+                    channelMap[ap.channel].count += ap.test_count || 0;
+                }
+            });
+
+            // Sort channels
+            const channels = Object.entries(channelMap)
+                .map(([ch, data]) => ({ channel: parseInt(ch), ...data }))
+                .sort((a, b) => a.channel - b.channel);
+
+            channelChart.data.labels = channels.map(c => c.channel);
+            channelChart.data.datasets[0].data = channels.map(c => c.count);
+            channelChart.data.datasets[0].backgroundColor = channels.map(c =>
+                c.band === '5GHz' ? 'rgba(59, 130, 246, 0.8)' :
+                c.band === '6GHz' ? 'rgba(34, 197, 94, 0.8)' :
+                'rgba(245, 158, 11, 0.8)'
+            );
+            channelChart.update();
+        }
+
+        // Render WiFi Recommendations
+        function renderWiFiRecommendations() {
+            const container = document.getElementById('wifiRecommendationsContainer');
+            if (!container) return;
+
+            if (!wifiRecommendations || wifiRecommendations.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const html = `
+                <div class="wifi-recommendations">
+                    ${wifiRecommendations.map(rec => `
+                        <div class="recommendation-card severity-${rec.severity}">
+                            <div class="rec-icon">${rec.icon}</div>
+                            <div class="rec-content">
+                                <div class="rec-message">${rec.message}</div>
+                                <div class="rec-suggestion">${rec.suggestion}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        // Filter WiFi Data (by band, signal, SSID)
+        function filterWiFiData() {
+            const bandFilter = document.getElementById('filterBand')?.value || '';
+            const signalFilter = document.getElementById('filterSignal')?.value || '';
+            const searchTerm = document.getElementById('searchSSID')?.value.toLowerCase() || '';
+
+            let filtered = [...(wifiData.byAccessPoint || [])];
+
+            // Apply band filter
+            if (bandFilter) {
+                filtered = filtered.filter(ap => ap.band === bandFilter);
+            }
+
+            // Apply signal quality filter
+            if (signalFilter) {
+                filtered = filtered.filter(ap => {
+                    const rssi = ap.avg_rssi || 0;
+                    if (signalFilter === 'excellent') return rssi >= -50 && rssi !== 0;
+                    if (signalFilter === 'good') return rssi > -70 && rssi < -50;
+                    if (signalFilter === 'weak') return rssi <= -70 && rssi !== 0;
+                    return true;
+                });
+            }
+
+            // Apply SSID search
+            if (searchTerm) {
+                filtered = filtered.filter(ap =>
+                    (ap.ssid || '').toLowerCase().includes(searchTerm) ||
+                    (ap.bssid || '').toLowerCase().includes(searchTerm)
+                );
+            }
+
+            // Sort data
+            sortWiFiDataArray(filtered);
+
+            // Update count
+            const countEl = document.getElementById('apCount');
+            if (countEl) countEl.textContent = `(${filtered.length})`;
+
+            // Render table
+            renderWiFiTable(filtered);
+        }
+
+        // Sort WiFi Table
+        function sortWiFiTable(column) {
+            if (wifiSortColumn === column) {
+                wifiSortDirection = wifiSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                wifiSortColumn = column;
+                wifiSortDirection = 'desc';
+            }
+
+            filterWiFiData();
+        }
+
+        function sortWiFiDataArray(arr) {
+            arr.sort((a, b) => {
+                let aVal = a[wifiSortColumn];
+                let bVal = b[wifiSortColumn];
+
+                // Handle null/undefined
+                if (aVal == null) aVal = wifiSortDirection === 'asc' ? Infinity : -Infinity;
+                if (bVal == null) bVal = wifiSortDirection === 'asc' ? Infinity : -Infinity;
+
+                // String comparison (case-insensitive)
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = (bVal || '').toLowerCase();
+                }
+
+                const result = aVal < bVal ? -1 : (aVal > bVal ? 1 : 0);
+                return wifiSortDirection === 'asc' ? result : -result;
+            });
+        }
+
+        // Render WiFi Access Points Table
+        function renderWiFiTable(aps) {
+            const container = document.getElementById('wifiTableContainer');
+            if (!container) return;
+
+            if (!aps || aps.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                            <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                            <circle cx="12" cy="20" r="1"/>
+                        </svg>
+                        <p>No access points match your filters</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const getSortArrow = (col) => {
+                if (wifiSortColumn === col) {
+                    return `<span class="sort-arrow active">${wifiSortDirection === 'asc' ? '↑' : '↓'}</span>`;
+                }
+                return '<span class="sort-arrow">↕</span>';
+            };
+
+            const html = `
+                <table class="device-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" onclick="sortWiFiTable('ssid')">SSID ${getSortArrow('ssid')}</th>
+                            <th class="sortable" onclick="sortWiFiTable('band')">Band ${getSortArrow('band')}</th>
+                            <th class="sortable" onclick="sortWiFiTable('channel')">Channel ${getSortArrow('channel')}</th>
+                            <th class="sortable" onclick="sortWiFiTable('device_count')">Devices ${getSortArrow('device_count')}</th>
+                            <th class="sortable" onclick="sortWiFiTable('avg_download')">Avg Speed ${getSortArrow('avg_download')}</th>
+                            <th class="sortable" onclick="sortWiFiTable('avg_rssi')">Signal ${getSortArrow('avg_rssi')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${aps.map(ap => {
+                            const bandClass = ap.band === '5GHz' ? 'band-5ghz' :
+                                             (ap.band === '2.4GHz' ? 'band-24ghz' : 'band-6ghz');
+                            const speedClass = (ap.avg_download || 0) >= 100 ? 'good' :
+                                              ((ap.avg_download || 0) >= 50 ? '' : 'warning');
+                            const rssi = ap.avg_rssi || 0;
+                            const activeBars = rssi >= -50 ? 4 : (rssi >= -60 ? 3 : (rssi >= -70 ? 2 : 1));
+                            const signalClass = rssi >= -60 ? '' : (rssi >= -70 ? 'fair' : 'weak');
+
+                            return `
+                                <tr>
+                                    <td>
+                                        <div class="wifi-ssid">
+                                            <div class="ssid-name">${ap.ssid || 'Unknown'}</div>
+                                            <div class="bssid">${ap.bssid || 'N/A'}</div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="band-badge ${bandClass}">${ap.band || 'Unknown'}</span>
+                                    </td>
+                                    <td>${ap.channel > 0 ? ap.channel : 'N/A'}</td>
+                                    <td>${ap.device_count || 0}</td>
+                                    <td>
+                                        <span class="speed-value ${speedClass}">${Math.round(ap.avg_download || 0)}</span> Mbps
+                                    </td>
+                                    <td>
+                                        <div class="signal-indicator">
+                                            <div class="signal-bars ${signalClass}">
+                                                ${[1, 2, 3, 4].map(i =>
+                                                    `<div class="bar ${i <= activeBars && rssi !== 0 ? 'active' : ''}"></div>`
+                                                ).join('')}
+                                            </div>
+                                            <span class="signal-value">${rssi !== 0 ? rssi + ' dBm' : 'N/A'}</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = html;
+        }
+
         // Keyboard support
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closePanel();
         });
 
-        // Initialize chart
+        // Initialize charts
         initChart();
+        initBandChart();
+        initChannelChart();
 
         // Load data on start
         loadAllData();
         loadChartData();
+        loadWiFiData();
 
         // Auto-refresh every 30 seconds
         setInterval(() => {
             loadAllData();
             loadChartData();
+            loadWiFiData();
         }, 30000);
     </script>
 </body>
