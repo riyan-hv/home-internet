@@ -228,6 +228,13 @@ for (const col of columnsToAdd) {
   }
 }
 
+// Helper: Parse and validate numeric field
+const parseNum = (val, defaultVal = 0) => {
+  if (val === null || val === undefined || val === '') return defaultVal;
+  const num = parseFloat(val);
+  return isNaN(num) ? defaultVal : num;
+};
+
 // API: Submit speed test result (v2.1 - added WiFi debugging fields)
 app.post('/api/results', (req, res) => {
   const data = req.body;
@@ -235,6 +242,30 @@ app.post('/api/results', (req, res) => {
   if (!data.device_id) {
     return res.status(400).json({ error: 'device_id is required' });
   }
+
+  // Validate and sanitize numeric fields to prevent type errors in aggregations
+  data.channel = parseNum(data.channel, 0);
+  data.width_mhz = parseNum(data.width_mhz, 0);
+  data.rssi_dbm = parseNum(data.rssi_dbm, 0);
+  data.noise_dbm = parseNum(data.noise_dbm, 0);
+  data.snr_db = parseNum(data.snr_db, 0);
+  data.tx_rate_mbps = parseNum(data.tx_rate_mbps, 0);
+  data.mcs_index = parseNum(data.mcs_index, -1);
+  data.spatial_streams = parseNum(data.spatial_streams, 0);
+  data.latency_ms = parseNum(data.latency_ms, 0);
+  data.jitter_ms = parseNum(data.jitter_ms, 0);
+  data.jitter_p50 = parseNum(data.jitter_p50, 0);
+  data.jitter_p95 = parseNum(data.jitter_p95, 0);
+  data.packet_loss_pct = parseNum(data.packet_loss_pct, 0);
+  data.download_mbps = parseNum(data.download_mbps, 0);
+  data.upload_mbps = parseNum(data.upload_mbps, 0);
+  data.input_errors = parseNum(data.input_errors, 0);
+  data.output_errors = parseNum(data.output_errors, 0);
+  data.input_error_rate = parseNum(data.input_error_rate, 0);
+  data.output_error_rate = parseNum(data.output_error_rate, 0);
+  data.tcp_retransmits = parseNum(data.tcp_retransmits, 0);
+  data.bssid_changed = parseNum(data.bssid_changed, 0);
+  data.roam_count = parseNum(data.roam_count, 0);
 
   try {
     const stmt = db.prepare(`
@@ -332,8 +363,8 @@ app.post('/api/results', (req, res) => {
 
 // API: Get all results (with pagination)
 app.get('/api/results', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
-  const offset = parseInt(req.query.offset) || 0;
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 1000);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0); // Reject negative offsets
   const device_id = req.query.device_id;
   const ssid = req.query.ssid;
   const vpn_status = req.query.vpn_status;
