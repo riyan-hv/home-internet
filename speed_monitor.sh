@@ -115,32 +115,25 @@ detect_vpn() {
         if [[ "$has_active_tunnel" == "true" ]]; then
             vpn_status="connected"
             vpn_name="Zscaler"
-        else
-            vpn_name="Zscaler (app running, tunnel inactive)"
         fi
+        # If tunnel not active, status stays "disconnected" and name stays "none"
     # Cisco AnyConnect - check for vpnagentd AND tunnel
     elif pgrep -x "vpnagentd" > /dev/null 2>&1; then
         if [[ "$has_active_tunnel" == "true" ]]; then
             vpn_status="connected"
-            vpn_name="Cisco AnyConnect"
-        else
-            vpn_name="Cisco AnyConnect (inactive)"
+            vpn_name="Cisco_AnyConnect"
         fi
     # Palo Alto GlobalProtect
     elif pgrep -x "PanGPS" > /dev/null 2>&1 || pgrep -x "GlobalProtect" > /dev/null 2>&1; then
         if [[ "$has_active_tunnel" == "true" ]]; then
             vpn_status="connected"
             vpn_name="GlobalProtect"
-        else
-            vpn_name="GlobalProtect (inactive)"
         fi
     # Fortinet FortiClient
     elif pgrep -x "FortiClient" > /dev/null 2>&1; then
         if [[ "$has_active_tunnel" == "true" ]]; then
             vpn_status="connected"
             vpn_name="FortiClient"
-        else
-            vpn_name="FortiClient (inactive)"
         fi
     # OpenVPN - process typically only runs when connected
     elif pgrep -x "openvpn" > /dev/null 2>&1; then
@@ -163,7 +156,7 @@ detect_vpn() {
     # Generic: unknown VPN with active tunnel
     elif [[ "$has_active_tunnel" == "true" ]]; then
         vpn_status="connected"
-        vpn_name="Unknown VPN"
+        vpn_name="Unknown_VPN"
     fi
 
     echo "VPN_STATUS=$vpn_status"
