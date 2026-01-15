@@ -18,8 +18,8 @@ CSV_FILE="$DATA_DIR/speed_log.csv"
 LOG_FILE="$DATA_DIR/speed_monitor.log"
 WIFI_HELPER="$HOME/.local/bin/wifi_info"
 
-# Server configuration (optional)
-SERVER_URL="${SPEED_MONITOR_SERVER:-}"
+# Server configuration
+SERVER_URL="${SPEED_MONITOR_SERVER:-https://home-internet-production.up.railway.app}"
 
 # Ensure directories exist
 mkdir -p "$DATA_DIR" "$CONFIG_DIR"
@@ -199,15 +199,23 @@ get_user_email() {
     fi
 }
 
-# Get WiFi details via CoreWLAN Swift helper
+# Get WiFi details via CoreWLAN Swift helper or system_profiler fallback
 get_wifi_details() {
+    # Try Swift helper first (if it has Location Services permission)
     if [[ -x "$WIFI_HELPER" ]]; then
-        "$WIFI_HELPER"
-    else
-        # Fallback: try legacy airport command
-        local airport="/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
-        if [[ -x "$airport" ]]; then
-            local ssid=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *SSID/ {print $2}')
+        local wifi_output=$("$WIFI_HELPER" 2>/dev/null)
+        # Check if helper returned valid data (CONNECTED=true)
+        if echo "$wifi_output" | grep -q "CONNECTED=true"; then
+            echo "$wifi_output"
+            return
+        fi
+    fi
+
+    # Fallback: try legacy airport command (pre-Sequoia)
+    local airport="/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
+    if [[ -x "$airport" ]]; then
+        local ssid=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *SSID/ {print $2}')
+        if [[ -n "$ssid" ]]; then
             local bssid=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *BSSID/ {print $2}')
             local channel=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *channel/ {print $2}' | cut -d',' -f1)
             local rssi=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *agrCtlRSSI/ {print $2}')
@@ -215,7 +223,7 @@ get_wifi_details() {
 
             echo "CONNECTED=true"
             echo "INTERFACE=en0"
-            echo "SSID=${ssid:-Unknown}"
+            echo "SSID=${ssid}"
             echo "BSSID=${bssid:-unknown}"
             echo "CHANNEL=${channel:-0}"
             echo "BAND=unknown"
@@ -224,20 +232,70 @@ get_wifi_details() {
             echo "NOISE_DBM=${noise:-0}"
             echo "SNR_DB=0"
             echo "TX_RATE_MBPS=0"
-        else
-            echo "CONNECTED=false"
-            echo "INTERFACE=none"
-            echo "SSID=Unknown/Ethernet"
-            echo "BSSID=unknown"
-            echo "CHANNEL=0"
-            echo "BAND=unknown"
-            echo "WIDTH_MHZ=0"
-            echo "RSSI_DBM=0"
-            echo "NOISE_DBM=0"
-            echo "SNR_DB=0"
-            echo "TX_RATE_MBPS=0"
+            return
         fi
     fi
+
+    # Fallback: use system_profiler (works on macOS Sequoia, no permissions needed)
+    local profiler_output=$(system_profiler SPAirPortDataType 2>/dev/null)
+    if echo "$profiler_output" | grep -q "Status: Connected"; then
+        # Parse WiFi info from system_profiler
+        # Note: SSID may be <redacted> due to privacy, but other metrics are available
+        local signal_line=$(echo "$profiler_output" | grep "Signal / Noise:" | head -1)
+        local rssi=$(echo "$signal_line" | sed 's/.*Signal \/ Noise: \(-*[0-9]*\) dBm.*/\1/')
+        local noise=$(echo "$signal_line" | sed 's/.*\/ \(-*[0-9]*\) dBm.*/\1/')
+        local channel_line=$(echo "$profiler_output" | grep "Channel:" | grep -v "Supported" | head -1)
+        local channel=$(echo "$channel_line" | sed 's/.*Channel: \([0-9]*\).*/\1/')
+        local band="unknown"
+        if echo "$channel_line" | grep -q "5GHz"; then
+            band="5GHz"
+        elif echo "$channel_line" | grep -q "2GHz"; then
+            band="2.4GHz"
+        fi
+        local width=0
+        if echo "$channel_line" | grep -q "80MHz"; then
+            width=80
+        elif echo "$channel_line" | grep -q "40MHz"; then
+            width=40
+        elif echo "$channel_line" | grep -q "20MHz"; then
+            width=20
+        fi
+        local tx_rate=$(echo "$profiler_output" | grep "Transmit Rate:" | head -1 | sed 's/.*Transmit Rate: \([0-9]*\).*/\1/')
+        local mcs=$(echo "$profiler_output" | grep "MCS Index:" | head -1 | sed 's/.*MCS Index: \([0-9]*\).*/\1/')
+
+        # Calculate SNR
+        local snr=0
+        if [[ -n "$rssi" && -n "$noise" && "$rssi" =~ ^-?[0-9]+$ && "$noise" =~ ^-?[0-9]+$ ]]; then
+            snr=$((rssi - noise))
+        fi
+
+        echo "CONNECTED=true"
+        echo "INTERFACE=en0"
+        echo "SSID=WiFi"  # SSID is redacted by macOS privacy
+        echo "BSSID=unknown"
+        echo "CHANNEL=${channel:-0}"
+        echo "BAND=${band}"
+        echo "WIDTH_MHZ=${width}"
+        echo "RSSI_DBM=${rssi:-0}"
+        echo "NOISE_DBM=${noise:-0}"
+        echo "SNR_DB=${snr}"
+        echo "TX_RATE_MBPS=${tx_rate:-0}"
+        echo "MCS_INDEX=${mcs:--1}"
+        return
+    fi
+
+    # Not connected to WiFi or using Ethernet
+    echo "CONNECTED=false"
+    echo "INTERFACE=none"
+    echo "SSID=Unknown/Ethernet"
+    echo "BSSID=unknown"
+    echo "CHANNEL=0"
+    echo "BAND=unknown"
+    echo "WIDTH_MHZ=0"
+    echo "RSSI_DBM=0"
+    echo "NOISE_DBM=0"
+    echo "SNR_DB=0"
+    echo "TX_RATE_MBPS=0"
 }
 
 # Detect VPN status
