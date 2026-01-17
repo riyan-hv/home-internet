@@ -520,8 +520,9 @@ struct MenuBarView: View {
                         .foregroundColor(.cyan)
                     Text("Network:")
                     Spacer()
-                    Text(locationManager.isAuthorized ? wifiManager.ssid : "⚠️ Enable Location")
-                        .foregroundColor(locationManager.isAuthorized ? .primary : .orange)
+                    Text(locationManager.isAuthorized ? wifiManager.ssid : "(Location required)")
+                        .foregroundColor(locationManager.isAuthorized ? .primary : .secondary)
+                        .font(locationManager.isAuthorized ? .body : .caption)
                 }
 
                 if locationManager.isAuthorized && wifiManager.isConnected {
@@ -579,17 +580,6 @@ struct MenuBarView: View {
                 }
             }
             .buttonStyle(.plain)
-
-            if !locationManager.isAuthorized {
-                Button(action: { showingSettings = true }) {
-                    HStack {
-                        Image(systemName: "gear")
-                        Text("Enable WiFi Detection...")
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.orange)
-            }
 
             Button(action: {
                 if let url = URL(string: "https://home-internet-production.up.railway.app/") {
