@@ -67,10 +67,20 @@ EOF
 # Compile Swift code as universal binary (Intel + Apple Silicon)
 echo "Compiling Swift (universal binary)..."
 
+# Use macOS 14.4 SDK from Command Line Tools (compatible with macOS 12+)
+SDK_PATH="/Library/Developer/CommandLineTools/SDKs/MacOSX14.4.sdk"
+if [[ ! -d "$SDK_PATH" ]]; then
+    # Fallback to default SDK if 14.4 not available
+    SDK_PATH=$(xcrun --show-sdk-path)
+    echo "  Warning: Using default SDK at $SDK_PATH"
+fi
+echo "  Using SDK: $SDK_PATH"
+
 # Compile for Apple Silicon (arm64)
 echo "  Building for arm64..."
 swiftc -O -parse-as-library \
     -target arm64-apple-macos12.0 \
+    -sdk "$SDK_PATH" \
     -o "$BUILD_DIR/SpeedMonitor-arm64" \
     "$SCRIPT_DIR/SpeedMonitorMenuBar.swift" \
     -framework SwiftUI \
@@ -82,6 +92,7 @@ swiftc -O -parse-as-library \
 echo "  Building for x86_64..."
 swiftc -O -parse-as-library \
     -target x86_64-apple-macos12.0 \
+    -sdk "$SDK_PATH" \
     -o "$BUILD_DIR/SpeedMonitor-x86_64" \
     "$SCRIPT_DIR/SpeedMonitorMenuBar.swift" \
     -framework SwiftUI \
