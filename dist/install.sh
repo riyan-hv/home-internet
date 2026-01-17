@@ -1,7 +1,7 @@
 #!/bin/bash
 # Speed Monitor v3.1.0 - One-line installer for employees
-# Usage: curl -fsSL https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/install.sh | bash
-# Uninstall: curl -fsSL https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/install.sh | bash -s -- --uninstall
+# Install:   curl -fsSL https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/install.sh | bash
+# Uninstall: curl -fsSL https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/uninstall.sh | bash
 
 set -e
 
@@ -11,49 +11,6 @@ CONFIG_DIR="$HOME/.config/nkspeedtest"
 BIN_DIR="$HOME/.local/bin"
 PLIST_NAME="com.speedmonitor.plist"
 MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
-
-# Handle uninstall
-if [[ "$1" == "--uninstall" ]] || [[ "$1" == "-u" ]]; then
-    echo "=== Speed Monitor Uninstaller ==="
-    echo ""
-    echo "This will remove Speed Monitor completely from your system."
-    echo ""
-
-    # Stop and remove launchd services
-    echo "Stopping services..."
-    launchctl unload "$HOME/Library/LaunchAgents/$PLIST_NAME" 2>/dev/null || true
-    launchctl unload "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" 2>/dev/null || true
-    rm -f "$HOME/Library/LaunchAgents/$PLIST_NAME"
-    rm -f "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME"
-    echo "✓ Services stopped and removed"
-
-    # Kill the menu bar app
-    echo "Closing SpeedMonitor app..."
-    killall SpeedMonitor 2>/dev/null || true
-    echo "✓ App closed"
-
-    # Remove the app
-    echo "Removing application..."
-    rm -rf /Applications/SpeedMonitor.app
-    echo "✓ SpeedMonitor.app removed"
-
-    # Remove scripts and data
-    echo "Removing data and scripts..."
-    rm -f "$BIN_DIR/speed_monitor.sh"
-    rm -f "$BIN_DIR/wifi_info"
-    rm -rf "$SCRIPT_DIR"
-    rm -rf "$CONFIG_DIR"
-    echo "✓ Data and scripts removed"
-
-    echo ""
-    echo "=== Uninstall Complete ==="
-    echo ""
-    echo "Speed Monitor has been completely removed from your system."
-    echo "To reinstall, run:"
-    echo "  curl -fsSL https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/install.sh | bash"
-    echo ""
-    exit 0
-fi
 
 echo "=== Speed Monitor v3.1.0 Installer ==="
 echo ""
