@@ -313,43 +313,64 @@ class SpeedDataManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Download and prepare update - launch happens in background AFTER this app exits
             let script = """
+            #!/bin/bash
             set -e
 
+            LOG_FILE="/tmp/speedmonitor_update.log"
+            exec > "$LOG_FILE" 2>&1
+            echo "=== SpeedMonitor Update $(date) ==="
+
             # Download
+            echo "Step 1: Downloading..."
             curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip
+            echo "Downloaded: $(ls -la /tmp/SpeedMonitor.app.zip)"
 
             # Extract
+            echo "Step 2: Extracting..."
             rm -rf /tmp/SpeedMonitor.app
-            unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/
+            unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/ >/dev/null
 
             # Verify download succeeded
+            echo "Step 3: Verifying..."
             if [ ! -d "/tmp/SpeedMonitor.app" ] || [ ! -f "/tmp/SpeedMonitor.app/Contents/MacOS/SpeedMonitor" ]; then
                 echo "ERROR: Download or extract failed"
                 exit 1
             fi
+            echo "Verified OK"
 
             # Install: remove old, copy new
+            echo "Step 4: Installing to /Applications..."
             rm -rf /Applications/SpeedMonitor.app
             cp -r /tmp/SpeedMonitor.app /Applications/
+            echo "Installed"
 
-            # Remove quarantine and sign
-            xattr -cr /Applications/SpeedMonitor.app 2>/dev/null || true
-            codesign --force --deep --sign - /Applications/SpeedMonitor.app 2>/dev/null || true
+            # Remove quarantine (use find instead of -r flag which doesn't exist on macOS xattr)
+            echo "Step 5: Removing quarantine..."
+            find /Applications/SpeedMonitor.app -exec xattr -d com.apple.quarantine {} \\; 2>/dev/null || true
+            echo "Quarantine removed"
 
             # Cleanup
+            echo "Step 6: Cleanup..."
             rm -f /tmp/SpeedMonitor.app.zip
             rm -rf /tmp/SpeedMonitor.app
+            echo "Cleaned up"
 
             # Launch new app in background (nohup ensures it survives parent exit)
+            echo "Step 7: Launching new app..."
             nohup /Applications/SpeedMonitor.app/Contents/MacOS/SpeedMonitor &>/dev/null &
 
             # Small delay to let new app start
-            sleep 2
+            sleep 1
+            echo "=== Update complete ==="
             """
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = ["-c", script]
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
 
             do {
                 try process.run()
@@ -357,11 +378,13 @@ class SpeedDataManager: ObservableObject {
 
                 if process.terminationStatus == 0 {
                     // Exit this instance - new app is already running
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         NSApplication.shared.terminate(nil)
                     }
                 } else {
-                    // Update failed - reset state
+                    // Update failed - read log for debugging
+                    let logContent = (try? String(contentsOfFile: "/tmp/speedmonitor_update.log")) ?? "No log"
+                    print("Update failed (exit \(process.terminationStatus)):\n\(logContent)")
                     DispatchQueue.main.async {
                         self?.isUpdating = false
                     }
@@ -443,7 +466,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.13"
+    static let appVersion = "3.1.14"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
