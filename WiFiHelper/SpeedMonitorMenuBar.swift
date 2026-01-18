@@ -186,6 +186,18 @@ class SpeedDataManager: ObservableObject {
     @Published var isSubmittingDiagnostics: Bool = false
     @Published var diagnosticsResult: String = ""
     @Published var testCountdown: Int = 0
+
+    // Installation status
+    @Published var hasHomebrew: Bool = true
+    @Published var hasSpeedtest: Bool = true
+    @Published var hasScript: Bool = true
+    @Published var hasLaunchd: Bool = true
+    @Published var isRepairing: Bool = false
+    @Published var repairStatus: String = ""
+
+    var needsRepair: Bool {
+        !hasHomebrew || !hasSpeedtest || !hasScript || !hasLaunchd
+    }
     @Published var isPaused: Bool = false {
         didSet {
             if isPaused {
@@ -213,6 +225,9 @@ class SpeedDataManager: ObservableObject {
 
         refresh()
 
+        // Check installation status on startup
+        checkInstallation()
+
         // Refresh display every 30 seconds
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.refresh()
@@ -224,7 +239,12 @@ class SpeedDataManager: ObservableObject {
         // Auto-run speed test if no data exists (first launch)
         if lastDownload == 0 && lastTest == nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                self?.runSpeedTest()
+                // Auto-repair if needed, then run speed test
+                if self?.needsRepair == true {
+                    self?.repairInstallation()
+                } else {
+                    self?.runSpeedTest()
+                }
             }
         }
     }
@@ -409,7 +429,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.10"
+    static let appVersion = "3.1.11"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
@@ -526,6 +546,156 @@ class SpeedDataManager: ObservableObject {
                     }
                 }
             }.resume()
+        }
+    }
+
+    // Check if all required components are installed
+    func checkInstallation() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let brewPath = Self.runCommand("/usr/bin/which brew")
+            let speedtestPath = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && which speedtest-cli'")
+            let scriptExists = FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.local/bin/speed_monitor.sh")
+            let launchdStatus = Self.runCommand("/bin/launchctl list | /usr/bin/grep speedmonitor")
+
+            DispatchQueue.main.async {
+                self?.hasHomebrew = !brewPath.isEmpty && !brewPath.contains("not found")
+                self?.hasSpeedtest = !speedtestPath.isEmpty && !speedtestPath.contains("not found")
+                self?.hasScript = scriptExists
+                self?.hasLaunchd = !launchdStatus.isEmpty
+            }
+        }
+    }
+
+    // Repair installation by installing missing components
+    func repairInstallation() {
+        guard !isRepairing else { return }
+        isRepairing = true
+        repairStatus = "Checking..."
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var steps: [String] = []
+
+            // Step 1: Check/Install Homebrew
+            let brewPath = Self.runCommand("/usr/bin/which brew")
+            if brewPath.isEmpty || brewPath.contains("not found") {
+                DispatchQueue.main.async { self?.repairStatus = "Installing Homebrew..." }
+                // Homebrew install requires user interaction, provide instructions
+                DispatchQueue.main.async {
+                    self?.repairStatus = "⚠️ Homebrew needed"
+                    self?.isRepairing = false
+                    // Open Terminal with Homebrew install command
+                    let script = "tell application \"Terminal\" to do script \"/bin/bash -c \\\"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\\\"\""
+                    if let appleScript = NSAppleScript(source: script) {
+                        appleScript.executeAndReturnError(nil)
+                    }
+                }
+                return
+            }
+            steps.append("✓ Homebrew")
+            DispatchQueue.main.async { self?.hasHomebrew = true }
+
+            // Step 2: Install speedtest-cli
+            let speedtestPath = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && which speedtest-cli'")
+            if speedtestPath.isEmpty || speedtestPath.contains("not found") {
+                DispatchQueue.main.async { self?.repairStatus = "Installing speedtest-cli..." }
+                let _ = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && brew install speedtest-cli 2>&1'")
+                // Verify installation
+                let verify = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && which speedtest-cli'")
+                if verify.isEmpty || verify.contains("not found") {
+                    DispatchQueue.main.async {
+                        self?.repairStatus = "❌ speedtest-cli failed"
+                        self?.isRepairing = false
+                    }
+                    return
+                }
+            }
+            steps.append("✓ speedtest-cli")
+            DispatchQueue.main.async { self?.hasSpeedtest = true }
+
+            // Step 3: Install/update speed_monitor.sh
+            DispatchQueue.main.async { self?.repairStatus = "Updating script..." }
+            let scriptDir = NSHomeDirectory() + "/.local/bin"
+            let scriptPath = scriptDir + "/speed_monitor.sh"
+
+            // Create directory if needed
+            try? FileManager.default.createDirectory(atPath: scriptDir, withIntermediateDirectories: true)
+
+            // Download latest script
+            let downloadResult = Self.runCommand("/usr/bin/curl -fsSL -o '\\(scriptPath)' 'https://raw.githubusercontent.com/hyperkishore/home-internet/main/speed_monitor.sh' 2>&1")
+            let _ = Self.runCommand("/bin/chmod +x '\\(scriptPath)'")
+
+            if !FileManager.default.fileExists(atPath: scriptPath) {
+                DispatchQueue.main.async {
+                    self?.repairStatus = "❌ Script download failed"
+                    self?.isRepairing = false
+                }
+                return
+            }
+            steps.append("✓ Script")
+            DispatchQueue.main.async { self?.hasScript = true }
+
+            // Step 4: Setup launchd
+            DispatchQueue.main.async { self?.repairStatus = "Setting up background service..." }
+            let launchAgentsDir = NSHomeDirectory() + "/Library/LaunchAgents"
+            let plistPath = launchAgentsDir + "/com.speedmonitor.plist"
+            let configDir = NSHomeDirectory() + "/.config/nkspeedtest"
+            let dataDir = NSHomeDirectory() + "/.local/share/nkspeedtest"
+
+            // Create directories
+            try? FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
+
+            // Generate device ID if needed
+            let deviceIdPath = configDir + "/device_id"
+            if !FileManager.default.fileExists(atPath: deviceIdPath) {
+                let deviceId = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)
+                try? String(deviceId).write(toFile: deviceIdPath, atomically: true, encoding: .utf8)
+            }
+
+            // Download and install plist
+            let _ = Self.runCommand("/usr/bin/curl -fsSL -o '\\(plistPath)' 'https://raw.githubusercontent.com/hyperkishore/home-internet/main/com.speedmonitor.plist' 2>&1")
+
+            // Load launchd job
+            let _ = Self.runCommand("/bin/launchctl unload '\\(plistPath)' 2>/dev/null")
+            let _ = Self.runCommand("/bin/launchctl load '\\(plistPath)' 2>&1")
+
+            // Verify launchd
+            let launchdCheck = Self.runCommand("/bin/launchctl list | /usr/bin/grep speedmonitor")
+            if !launchdCheck.isEmpty {
+                steps.append("✓ Background service")
+                DispatchQueue.main.async { self?.hasLaunchd = true }
+            }
+
+            DispatchQueue.main.async {
+                self?.isRepairing = false
+                self?.repairStatus = "✅ All fixed!"
+                self?.checkInstallation()
+
+                // Clear status after 5 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    self?.repairStatus = ""
+                }
+            }
+        }
+    }
+
+    // Helper to run shell commands and return output
+    private static func runCommand(_ command: String) -> String {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", command]
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        } catch {
+            return ""
         }
     }
 
@@ -759,6 +929,48 @@ struct MenuBarView: View {
                 .foregroundColor(.white)
                 .padding(8)
                 .background(Color.blue)
+                .cornerRadius(6)
+            }
+
+            // Repair banner (when installation issues detected)
+            if speedData.needsRepair || !speedData.repairStatus.isEmpty {
+                Button(action: { speedData.repairInstallation() }) {
+                    HStack {
+                        Image(systemName: speedData.isRepairing ? "hourglass" : "wrench.and.screwdriver.fill")
+                            .foregroundColor(.white)
+                        if !speedData.repairStatus.isEmpty {
+                            Text(speedData.repairStatus)
+                                .fontWeight(.medium)
+                        } else {
+                            Text("Setup Required")
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("Click to fix")
+                                .font(.caption)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .background(speedData.repairStatus.contains("✅") ? Color.green : Color.orange)
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .disabled(speedData.isRepairing)
+            }
+
+            // VPN warning banner
+            if speedData.vpnStatus == "connected" && speedData.lastDownload == 0 {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.white)
+                    Text("VPN may be blocking speed tests")
+                        .fontWeight(.medium)
+                }
+                .font(.caption)
+                .foregroundColor(.white)
+                .padding(8)
+                .background(Color.red.opacity(0.8))
                 .cornerRadius(6)
             }
 
