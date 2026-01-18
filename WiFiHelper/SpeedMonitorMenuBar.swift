@@ -394,7 +394,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.1"
+    static let appVersion = "3.1.2"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
@@ -843,7 +843,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func updateStatusButton(_ button: NSStatusBarButton) {
         let emoji = speedData.statusEmoji
-        let update = speedData.updateAvailable ? "🔄" : ""
+        let update = speedData.updateAvailable ? "↑" : ""
         let download = String(format: "%.0f", speedData.lastDownload)
         button.title = "\(emoji)\(update) \(download) Mbps"
     }
