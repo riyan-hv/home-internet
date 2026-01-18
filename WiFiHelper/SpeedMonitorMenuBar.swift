@@ -394,6 +394,8 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
+    static let appVersion = "3.1.0"
+
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
         URLSession.shared.dataTask(with: versionURL) { [weak self] data, _, _ in
@@ -401,19 +403,11 @@ class SpeedDataManager: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let serverVersion = json["version"] as? String else { return }
 
-            // Read local version
-            let localVersionPath = NSHomeDirectory() + "/.local/bin/speed_monitor.sh"
-            guard let script = try? String(contentsOfFile: localVersionPath, encoding: .utf8) else { return }
-
-            // Extract version from script
-            let pattern = "APP_VERSION=\"([^\"]+)\""
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: script, range: NSRange(script.startIndex..., in: script)),
-               let range = Range(match.range(at: 1), in: script) {
-                let localVersion = String(script[range])
-                DispatchQueue.main.async {
-                    self?.updateAvailable = localVersion != serverVersion
-                }
+            // Compare app's built-in version with server version
+            let localVersion = SpeedDataManager.appVersion
+            DispatchQueue.main.async {
+                // Update available if server version is newer (simple string comparison works for semver)
+                self?.updateAvailable = serverVersion > localVersion
             }
         }.resume()
     }
@@ -557,7 +551,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Version:")
                         Spacer()
-                        Text("3.1.0")
+                        Text(SpeedDataManager.appVersion)
                     }
                     HStack {
                         Text("Dashboard:")
@@ -587,15 +581,13 @@ struct MenuBarView: View {
     @State private var showingSettings = false
     @State private var isPulsing = false
 
-    let appVersion = "3.1.0"
-
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Header with version
             VStack(alignment: .leading, spacing: 2) {
                 Text("Speed Monitor")
                     .font(.headline)
-                Text("v\(appVersion)")
+                Text("v\(SpeedDataManager.appVersion)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
