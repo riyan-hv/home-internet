@@ -409,7 +409,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.08"
+    static let appVersion = "3.1.09"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
@@ -448,52 +448,44 @@ class SpeedDataManager: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Collect diagnostic information via shell commands
+            // Use jq for proper JSON escaping of all fields
+            let appVersion = SpeedDataManager.appVersion
             let script = """
-            # Collect diagnostic info as JSON
             DEVICE_ID=$(cat ~/.config/nkspeedtest/device_id 2>/dev/null || echo "unknown")
             USER_EMAIL=$(cat ~/.config/nkspeedtest/user_email 2>/dev/null || echo "")
             HOSTNAME=$(hostname)
             OS_VERSION=$(sw_vers -productVersion)
-            APP_VERSION="\(SpeedDataManager.appVersion)"
+            APP_VERSION="\(appVersion)"
             SCRIPT_VERSION=$(grep "APP_VERSION=" ~/.local/bin/speed_monitor.sh 2>/dev/null | head -1 | cut -d'"' -f2 || echo "unknown")
-
-            # Check launchd status
-            LAUNCHD_STATUS=$(launchctl list 2>/dev/null | grep speedmonitor || echo "not loaded")
-
-            # Check speedtest-cli
+            LAUNCHD_STATUS=$(launchctl list 2>/dev/null | grep speedmonitor | head -1 || echo "not loaded")
             SPEEDTEST_PATH=$(which speedtest-cli 2>/dev/null || echo "not found")
-            SPEEDTEST_INSTALLED=$([[ -x "$SPEEDTEST_PATH" ]] && echo "true" || echo "false")
+            if [[ -x "$SPEEDTEST_PATH" ]]; then SPEEDTEST_INSTALLED=true; else SPEEDTEST_INSTALLED=false; fi
+            ERROR_LOG=$(tail -30 ~/.local/share/nkspeedtest/launchd_stderr.log 2>/dev/null | tr "\\n" "|" || echo "no logs")
+            LAST_TEST=$(tail -1 ~/.local/share/nkspeedtest/speed_log.csv 2>/dev/null | cut -d"," -f1-37 || echo "no data")
+            NETWORK_INFO=$(ifconfig -a 2>/dev/null | grep -E "^[a-z]|inet " | head -10 | tr "\\n" "|" || echo "")
+            WIFI_INFO=$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I 2>/dev/null | tr "\\n" "|" || echo "")
 
-            # Get error logs (last 30 lines)
-            ERROR_LOG=$(tail -30 ~/.local/share/nkspeedtest/launchd_stderr.log 2>/dev/null | sed 's/"/\\\\"/g' | tr '\\n' '|' || echo "no logs")
+            # Find jq
+            JQ_PATH=$(which jq 2>/dev/null)
+            [[ -z "$JQ_PATH" ]] && JQ_PATH="/opt/homebrew/bin/jq"
+            [[ ! -x "$JQ_PATH" ]] && JQ_PATH="/usr/bin/jq"
+            [[ ! -x "$JQ_PATH" ]] && JQ_PATH="/usr/local/bin/jq"
 
-            # Get last test result
-            LAST_TEST=$(tail -1 ~/.local/share/nkspeedtest/speed_log.csv 2>/dev/null || echo "no data")
-
-            # Get network interfaces
-            NETWORK_INFO=$(ifconfig -a 2>/dev/null | grep -E "^[a-z]|inet " | head -20 | tr '\\n' '|' || echo "")
-
-            # Get WiFi info
-            WIFI_INFO=$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I 2>/dev/null | tr '\\n' '|' || echo "")
-
-            # Output as JSON
-            cat << EOF
-            {
-              "device_id": "$DEVICE_ID",
-              "user_email": "$USER_EMAIL",
-              "hostname": "$HOSTNAME",
-              "os_version": "$OS_VERSION",
-              "app_version": "$APP_VERSION",
-              "script_version": "$SCRIPT_VERSION",
-              "launchd_status": "$LAUNCHD_STATUS",
-              "speedtest_installed": $SPEEDTEST_INSTALLED,
-              "speedtest_path": "$SPEEDTEST_PATH",
-              "error_log": "$ERROR_LOG",
-              "last_test_result": "$LAST_TEST",
-              "network_interfaces": "$NETWORK_INFO",
-              "wifi_info": "$WIFI_INFO"
-            }
-            EOF
+            "$JQ_PATH" -n \\
+              --arg device_id "$DEVICE_ID" \\
+              --arg user_email "$USER_EMAIL" \\
+              --arg hostname "$HOSTNAME" \\
+              --arg os_version "$OS_VERSION" \\
+              --arg app_version "$APP_VERSION" \\
+              --arg script_version "$SCRIPT_VERSION" \\
+              --arg launchd_status "$LAUNCHD_STATUS" \\
+              --argjson speedtest_installed "$SPEEDTEST_INSTALLED" \\
+              --arg speedtest_path "$SPEEDTEST_PATH" \\
+              --arg error_log "$ERROR_LOG" \\
+              --arg last_test_result "$LAST_TEST" \\
+              --arg network_interfaces "$NETWORK_INFO" \\
+              --arg wifi_info "$WIFI_INFO" \\
+              '{device_id: $device_id, user_email: $user_email, hostname: $hostname, os_version: $os_version, app_version: $app_version, script_version: $script_version, launchd_status: $launchd_status, speedtest_installed: $speedtest_installed, speedtest_path: $speedtest_path, error_log: $error_log, last_test_result: $last_test_result, network_interfaces: $network_interfaces, wifi_info: $wifi_info}'
             """
 
             let process = Process()
