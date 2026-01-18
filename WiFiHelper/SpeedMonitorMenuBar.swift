@@ -409,7 +409,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.09"
+    static let appVersion = "3.1.10"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
@@ -448,44 +448,23 @@ class SpeedDataManager: ObservableObject {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Collect diagnostic information via shell commands
-            // Use jq for proper JSON escaping of all fields
+            // Use Python for JSON encoding (available on all Macs, unlike jq)
             let appVersion = SpeedDataManager.appVersion
             let script = """
-            DEVICE_ID=$(cat ~/.config/nkspeedtest/device_id 2>/dev/null || echo "unknown")
-            USER_EMAIL=$(cat ~/.config/nkspeedtest/user_email 2>/dev/null || echo "")
-            HOSTNAME=$(hostname)
-            OS_VERSION=$(sw_vers -productVersion)
-            APP_VERSION="\(appVersion)"
-            SCRIPT_VERSION=$(grep "APP_VERSION=" ~/.local/bin/speed_monitor.sh 2>/dev/null | head -1 | cut -d'"' -f2 || echo "unknown")
-            LAUNCHD_STATUS=$(launchctl list 2>/dev/null | grep speedmonitor | head -1 || echo "not loaded")
-            SPEEDTEST_PATH=$(which speedtest-cli 2>/dev/null || echo "not found")
-            if [[ -x "$SPEEDTEST_PATH" ]]; then SPEEDTEST_INSTALLED=true; else SPEEDTEST_INSTALLED=false; fi
-            ERROR_LOG=$(tail -30 ~/.local/share/nkspeedtest/launchd_stderr.log 2>/dev/null | tr "\\n" "|" || echo "no logs")
-            LAST_TEST=$(tail -1 ~/.local/share/nkspeedtest/speed_log.csv 2>/dev/null | cut -d"," -f1-37 || echo "no data")
-            NETWORK_INFO=$(ifconfig -a 2>/dev/null | grep -E "^[a-z]|inet " | head -10 | tr "\\n" "|" || echo "")
-            WIFI_INFO=$(/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -I 2>/dev/null | tr "\\n" "|" || echo "")
+            export DEVICE_ID=$(cat ~/.config/nkspeedtest/device_id 2>/dev/null || echo "unknown")
+            export USER_EMAIL=$(cat ~/.config/nkspeedtest/user_email 2>/dev/null || echo "")
+            export HOSTNAME_VAL=$(hostname)
+            export OS_VERSION=$(sw_vers -productVersion)
+            export APP_VERSION="\(appVersion)"
+            export SCRIPT_VERSION=$(grep "APP_VERSION=" ~/.local/bin/speed_monitor.sh 2>/dev/null | head -1 | cut -d'"' -f2 || echo "unknown")
+            export LAUNCHD_STATUS=$(launchctl list 2>/dev/null | grep speedmonitor | head -1 || echo "not loaded")
+            export SPEEDTEST_PATH=$(which speedtest-cli 2>/dev/null || echo "not found")
+            if [[ -x "$SPEEDTEST_PATH" ]]; then export SPEEDTEST_INSTALLED="True"; else export SPEEDTEST_INSTALLED="False"; fi
+            export ERROR_LOG=$(tail -10 ~/.local/share/nkspeedtest/launchd_stderr.log 2>/dev/null | tr "\\n" "|" || echo "no logs")
+            export LAST_TEST=$(tail -1 ~/.local/share/nkspeedtest/speed_log.csv 2>/dev/null | cut -d"," -f1-20 || echo "no data")
+            export NETWORK_INFO=$(ifconfig en0 2>/dev/null | grep "inet " | head -1 || echo "")
 
-            # Find jq
-            JQ_PATH=$(which jq 2>/dev/null)
-            [[ -z "$JQ_PATH" ]] && JQ_PATH="/opt/homebrew/bin/jq"
-            [[ ! -x "$JQ_PATH" ]] && JQ_PATH="/usr/bin/jq"
-            [[ ! -x "$JQ_PATH" ]] && JQ_PATH="/usr/local/bin/jq"
-
-            "$JQ_PATH" -n \\
-              --arg device_id "$DEVICE_ID" \\
-              --arg user_email "$USER_EMAIL" \\
-              --arg hostname "$HOSTNAME" \\
-              --arg os_version "$OS_VERSION" \\
-              --arg app_version "$APP_VERSION" \\
-              --arg script_version "$SCRIPT_VERSION" \\
-              --arg launchd_status "$LAUNCHD_STATUS" \\
-              --argjson speedtest_installed "$SPEEDTEST_INSTALLED" \\
-              --arg speedtest_path "$SPEEDTEST_PATH" \\
-              --arg error_log "$ERROR_LOG" \\
-              --arg last_test_result "$LAST_TEST" \\
-              --arg network_interfaces "$NETWORK_INFO" \\
-              --arg wifi_info "$WIFI_INFO" \\
-              '{device_id: $device_id, user_email: $user_email, hostname: $hostname, os_version: $os_version, app_version: $app_version, script_version: $script_version, launchd_status: $launchd_status, speedtest_installed: $speedtest_installed, speedtest_path: $speedtest_path, error_log: $error_log, last_test_result: $last_test_result, network_interfaces: $network_interfaces, wifi_info: $wifi_info}'
+            /usr/bin/python3 -c "import json, os; data = {'device_id': os.environ.get('DEVICE_ID', 'unknown'), 'user_email': os.environ.get('USER_EMAIL', ''), 'hostname': os.environ.get('HOSTNAME_VAL', ''), 'os_version': os.environ.get('OS_VERSION', ''), 'app_version': os.environ.get('APP_VERSION', ''), 'script_version': os.environ.get('SCRIPT_VERSION', ''), 'launchd_status': os.environ.get('LAUNCHD_STATUS', ''), 'speedtest_installed': os.environ.get('SPEEDTEST_INSTALLED', 'False') == 'True', 'speedtest_path': os.environ.get('SPEEDTEST_PATH', ''), 'error_log': os.environ.get('ERROR_LOG', ''), 'last_test_result': os.environ.get('LAST_TEST', ''), 'network_interfaces': os.environ.get('NETWORK_INFO', '')}; print(json.dumps(data))"
             """
 
             let process = Process()
