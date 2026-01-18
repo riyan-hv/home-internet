@@ -1,4 +1,21 @@
-# Speed Monitor v3.0.0 - Organization Internet Monitoring
+# Speed Monitor v3.1.0 - Organization Internet Monitoring
+
+## IMPORTANT: Version Management
+
+**With every update, increment the version number in ALL these files:**
+1. `VERSION` - Single source of truth
+2. `speed_monitor.sh` - `APP_VERSION` constant
+3. `dist/server/index.js` - `APP_VERSION` constant
+4. `WiFiHelper/SpeedMonitorMenuBar.swift` - `appVersion` constant AND Settings "About" section
+5. `dist/install.sh` - Version in comments/echo statements
+6. This file (`CLAUDE.md`) - Header and any version references
+
+**Version format:** `MAJOR.MINOR.PATCH` (e.g., 3.1.0)
+- PATCH: Bug fixes
+- MINOR: New features
+- MAJOR: Breaking changes
+
+---
 
 ## Overview
 
@@ -36,8 +53,8 @@ Speed Monitor is an automated internet performance tracking system for organizat
 ```
 home-internet/
 ├── CLAUDE.md                    # This file - project documentation
-├── VERSION                      # Single source of truth for app version (3.0.0)
-├── speed_monitor.sh             # Main client script (v3.0.0)
+├── VERSION                      # Single source of truth for app version (3.1.0)
+├── speed_monitor.sh             # Main client script (v3.1.0)
 ├── com.speedmonitor.plist       # launchd configuration
 │
 ├── WiFiHelper/                  # Native macOS menu bar app
