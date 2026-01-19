@@ -449,7 +449,7 @@ echo "=== Update complete ==="
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.15"
+    static let appVersion = "3.1.17"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
@@ -586,116 +586,140 @@ echo "=== Update complete ==="
         }
     }
 
-    // Repair installation by installing missing components
+    // Repair installation by opening Terminal with repair script
     func repairInstallation() {
         guard !isRepairing else { return }
         isRepairing = true
-        repairStatus = "Checking..."
+        repairStatus = "Opening Terminal..."
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var steps: [String] = []
+        // Create a repair script that shows progress in Terminal
+        let repairScript = """
+#!/bin/bash
+# Speed Monitor Repair Script
+# This script will fix any missing components
 
-            // Step 1: Check/Install Homebrew
-            let brewPath = Self.runCommand("/usr/bin/which brew")
-            if brewPath.isEmpty || brewPath.contains("not found") {
-                DispatchQueue.main.async { self?.repairStatus = "Installing Homebrew..." }
-                // Homebrew install requires user interaction, provide instructions
-                DispatchQueue.main.async {
-                    self?.repairStatus = "⚠️ Homebrew needed"
-                    self?.isRepairing = false
-                    // Open Terminal with Homebrew install command
-                    let script = "tell application \"Terminal\" to do script \"/bin/bash -c \\\"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\\\"\""
-                    if let appleScript = NSAppleScript(source: script) {
-                        appleScript.executeAndReturnError(nil)
-                    }
+set -e
+export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH
+
+echo "========================================"
+echo "  Speed Monitor - Installation Repair"
+echo "========================================"
+echo ""
+
+# Step 1: Check Homebrew
+echo "Step 1/4: Checking Homebrew..."
+if ! command -v brew &> /dev/null; then
+    echo "  ❌ Homebrew not found"
+    echo "  Installing Homebrew (this may take a few minutes)..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    echo "  ✅ Homebrew installed"
+else
+    echo "  ✅ Homebrew found: $(which brew)"
+fi
+echo ""
+
+# Step 2: Check speedtest-cli
+echo "Step 2/4: Checking speedtest-cli..."
+if ! command -v speedtest-cli &> /dev/null; then
+    echo "  ❌ speedtest-cli not found"
+    echo "  Installing via Homebrew..."
+    brew install speedtest-cli
+    echo "  ✅ speedtest-cli installed"
+else
+    echo "  ✅ speedtest-cli found: $(which speedtest-cli)"
+fi
+echo ""
+
+# Step 3: Install/update speed_monitor.sh
+echo "Step 3/4: Updating speed_monitor.sh..."
+mkdir -p ~/.local/bin
+curl -fsSL -o ~/.local/bin/speed_monitor.sh 'https://raw.githubusercontent.com/hyperkishore/home-internet/main/speed_monitor.sh'
+chmod +x ~/.local/bin/speed_monitor.sh
+echo "  ✅ Script updated: ~/.local/bin/speed_monitor.sh"
+echo "  Version: $(~/.local/bin/speed_monitor.sh --version 2>/dev/null || echo 'unknown')"
+echo ""
+
+# Step 4: Setup launchd service
+echo "Step 4/4: Setting up background service..."
+mkdir -p ~/Library/LaunchAgents
+mkdir -p ~/.config/nkspeedtest
+mkdir -p ~/.local/share/nkspeedtest
+
+# Generate device ID if needed
+if [ ! -f ~/.config/nkspeedtest/device_id ]; then
+    uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '-' | head -c 16 > ~/.config/nkspeedtest/device_id
+    echo "  Generated device ID: $(cat ~/.config/nkspeedtest/device_id)"
+fi
+
+# Download and install plist
+curl -fsSL -o ~/Library/LaunchAgents/com.speedmonitor.plist 'https://raw.githubusercontent.com/hyperkishore/home-internet/main/com.speedmonitor.plist'
+
+# Load launchd job
+launchctl unload ~/Library/LaunchAgents/com.speedmonitor.plist 2>/dev/null || true
+launchctl load ~/Library/LaunchAgents/com.speedmonitor.plist
+echo "  ✅ Background service started"
+echo ""
+
+# Verify
+echo "========================================"
+echo "  Verification"
+echo "========================================"
+echo "Homebrew:     $(command -v brew &> /dev/null && echo '✅ OK' || echo '❌ Missing')"
+echo "speedtest-cli: $(command -v speedtest-cli &> /dev/null && echo '✅ OK' || echo '❌ Missing')"
+echo "Script:       $([ -f ~/.local/bin/speed_monitor.sh ] && echo '✅ OK' || echo '❌ Missing')"
+echo "Service:      $(launchctl list | grep -q 'com.speedmonitor$' && echo '✅ Running' || echo '❌ Not running')"
+echo ""
+echo "========================================"
+echo "  ✅ Repair Complete!"
+echo "========================================"
+echo ""
+echo "You can close this window."
+echo "Click the menu bar icon and press Refresh to update the status."
+"""
+
+        // Write script to temp file
+        let scriptPath = "/tmp/speedmonitor_repair.sh"
+        do {
+            try repairScript.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+
+            // Make executable
+            let chmodProcess = Process()
+            chmodProcess.executableURL = URL(fileURLWithPath: "/bin/chmod")
+            chmodProcess.arguments = ["+x", scriptPath]
+            try chmodProcess.run()
+            chmodProcess.waitUntilExit()
+
+            // Open Terminal and run the script
+            let appleScript = """
+            tell application "Terminal"
+                activate
+                do script "/tmp/speedmonitor_repair.sh"
+            end tell
+            """
+
+            if let script = NSAppleScript(source: appleScript) {
+                var error: NSDictionary?
+                script.executeAndReturnError(&error)
+                if let error = error {
+                    print("AppleScript error: \\(error)")
                 }
-                return
-            }
-            steps.append("✓ Homebrew")
-            DispatchQueue.main.async { self?.hasHomebrew = true }
-
-            // Step 2: Install speedtest-cli
-            let speedtestPath = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && which speedtest-cli'")
-            if speedtestPath.isEmpty || speedtestPath.contains("not found") {
-                DispatchQueue.main.async { self?.repairStatus = "Installing speedtest-cli..." }
-                let _ = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && brew install speedtest-cli 2>&1'")
-                // Verify installation
-                let verify = Self.runCommand("/bin/bash -c 'export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && which speedtest-cli'")
-                if verify.isEmpty || verify.contains("not found") {
-                    DispatchQueue.main.async {
-                        self?.repairStatus = "❌ speedtest-cli failed"
-                        self?.isRepairing = false
-                    }
-                    return
-                }
-            }
-            steps.append("✓ speedtest-cli")
-            DispatchQueue.main.async { self?.hasSpeedtest = true }
-
-            // Step 3: Install/update speed_monitor.sh
-            DispatchQueue.main.async { self?.repairStatus = "Updating script..." }
-            let scriptDir = NSHomeDirectory() + "/.local/bin"
-            let scriptPath = scriptDir + "/speed_monitor.sh"
-
-            // Create directory if needed
-            try? FileManager.default.createDirectory(atPath: scriptDir, withIntermediateDirectories: true)
-
-            // Download latest script
-            let downloadResult = Self.runCommand("/usr/bin/curl -fsSL -o '\\(scriptPath)' 'https://raw.githubusercontent.com/hyperkishore/home-internet/main/speed_monitor.sh' 2>&1")
-            let _ = Self.runCommand("/bin/chmod +x '\\(scriptPath)'")
-
-            if !FileManager.default.fileExists(atPath: scriptPath) {
-                DispatchQueue.main.async {
-                    self?.repairStatus = "❌ Script download failed"
-                    self?.isRepairing = false
-                }
-                return
-            }
-            steps.append("✓ Script")
-            DispatchQueue.main.async { self?.hasScript = true }
-
-            // Step 4: Setup launchd
-            DispatchQueue.main.async { self?.repairStatus = "Setting up background service..." }
-            let launchAgentsDir = NSHomeDirectory() + "/Library/LaunchAgents"
-            let plistPath = launchAgentsDir + "/com.speedmonitor.plist"
-            let configDir = NSHomeDirectory() + "/.config/nkspeedtest"
-            let dataDir = NSHomeDirectory() + "/.local/share/nkspeedtest"
-
-            // Create directories
-            try? FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
-            try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
-            try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
-
-            // Generate device ID if needed
-            let deviceIdPath = configDir + "/device_id"
-            if !FileManager.default.fileExists(atPath: deviceIdPath) {
-                let deviceId = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)
-                try? String(deviceId).write(toFile: deviceIdPath, atomically: true, encoding: .utf8)
-            }
-
-            // Download and install plist
-            let _ = Self.runCommand("/usr/bin/curl -fsSL -o '\\(plistPath)' 'https://raw.githubusercontent.com/hyperkishore/home-internet/main/com.speedmonitor.plist' 2>&1")
-
-            // Load launchd job
-            let _ = Self.runCommand("/bin/launchctl unload '\\(plistPath)' 2>/dev/null")
-            let _ = Self.runCommand("/bin/launchctl load '\\(plistPath)' 2>&1")
-
-            // Verify launchd
-            let launchdCheck = Self.runCommand("/bin/launchctl list | /usr/bin/grep speedmonitor")
-            if !launchdCheck.isEmpty {
-                steps.append("✓ Background service")
-                DispatchQueue.main.async { self?.hasLaunchd = true }
             }
 
             DispatchQueue.main.async {
-                self?.isRepairing = false
-                self?.repairStatus = "✅ All fixed!"
-                self?.checkInstallation()
+                self.isRepairing = false
+                self.repairStatus = "Check Terminal window"
 
-                // Clear status after 5 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    self?.repairStatus = ""
+                // Re-check installation after a delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                    self.checkInstallation()
+                    self.repairStatus = ""
                 }
+            }
+        } catch {
+            print("Failed to create repair script: \\(error)")
+            DispatchQueue.main.async {
+                self.isRepairing = false
+                self.repairStatus = "❌ Failed to start repair"
             }
         }
     }
