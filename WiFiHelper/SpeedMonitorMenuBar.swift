@@ -200,16 +200,6 @@ class SpeedDataManager: ObservableObject {
     var needsRepair: Bool {
         !hasHomebrew || !hasSpeedtest || !hasScript || !hasLaunchd
     }
-    @Published var isPaused: Bool = false {
-        didSet {
-            if isPaused {
-                autoTestTimer?.invalidate()
-                autoTestTimer = nil
-            } else {
-                restartAutoTestTimer()
-            }
-        }
-    }
     @Published var testIntervalSeconds: Int = 600 {
         didSet {
             SettingsManager.shared.testIntervalSeconds = testIntervalSeconds
@@ -254,11 +244,8 @@ class SpeedDataManager: ObservableObject {
     func restartAutoTestTimer() {
         autoTestTimer?.invalidate()
 
-        // Don't start timer if paused
-        guard !isPaused else { return }
-
         // Only start auto-test timer if interval is less than 10 minutes (600 sec)
-        // For 10+ min intervals, rely on launchd background service
+        // For 10+ min intervals, rely on launchd background service which always runs
         guard testIntervalSeconds < 600 else { return }
 
         autoTestTimer = Timer.scheduledTimer(withTimeInterval: Double(testIntervalSeconds), repeats: true) { [weak self] _ in
@@ -449,7 +436,7 @@ echo "=== Update complete ==="
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.17"
+    static let appVersion = "3.1.18"
 
     func checkForUpdate() {
         let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
@@ -928,27 +915,15 @@ struct MenuBarView: View {
 
                 Spacer()
 
-                // Hover-only controls
+                // Hover-only close button
                 if isHoveringHeader {
-                    HStack(spacing: 8) {
-                        // Pause button
-                        Button(action: { speedData.isPaused.toggle() }) {
-                            Image(systemName: speedData.isPaused ? "play.fill" : "pause.fill")
-                                .foregroundColor(speedData.isPaused ? .green : .orange)
-                                .frame(width: 20, height: 20)
-                        }
-                        .buttonStyle(.plain)
-                        .help(speedData.isPaused ? "Resume auto-tests" : "Pause auto-tests")
-
-                        // Close button
-                        Button(action: { onClose?() }) {
-                            Image(systemName: "xmark")
-                                .foregroundColor(.secondary)
-                                .frame(width: 20, height: 20)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Close")
+                    Button(action: { onClose?() }) {
+                        Image(systemName: "xmark")
+                            .foregroundColor(.secondary)
+                            .frame(width: 20, height: 20)
                     }
+                    .buttonStyle(.plain)
+                    .help("Close")
                 }
             }
             .padding(.vertical, 4)
