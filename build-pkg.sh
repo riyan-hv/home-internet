@@ -9,7 +9,12 @@
 
 set -e
 
-VERSION="3.1.0"
+# Read version from VERSION file (single source of truth)
+if [[ -f "VERSION" ]]; then
+    VERSION=$(cat VERSION | tr -d '[:space:]')
+else
+    VERSION="3.1.0"
+fi
 PKG_NAME="SpeedMonitor-${VERSION}.pkg"
 BUILD_DIR="$(pwd)/pkg-build"
 PAYLOAD_DIR="${BUILD_DIR}/payload"
@@ -343,7 +348,7 @@ if [ -f "${INSTALL_DIR}/lib/SpeedMonitorMenuBar.swift" ]; then
     <key>CFBundleName</key>
     <string>SpeedMonitor</string>
     <key>CFBundleVersion</key>
-    <string>3.1.0</string>
+    <string>${VERSION}</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSLocationWhenInUseUsageDescription</key>
@@ -534,7 +539,7 @@ productbuild --synthesize \
              "${BUILD_DIR}/distribution.xml"
 
 # Customize distribution XML
-cat > "${BUILD_DIR}/distribution.xml" << 'DIST_EOF'
+cat > "${BUILD_DIR}/distribution.xml" << DIST_EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
     <title>Speed Monitor</title>
@@ -551,7 +556,7 @@ cat > "${BUILD_DIR}/distribution.xml" << 'DIST_EOF'
     <choice id="com.speedmonitor.pkg" visible="false">
         <pkg-ref id="com.speedmonitor.pkg"/>
     </choice>
-    <pkg-ref id="com.speedmonitor.pkg" version="3.1.0" onConclusion="none">component.pkg</pkg-ref>
+    <pkg-ref id="com.speedmonitor.pkg" version="${VERSION}" onConclusion="none">component.pkg</pkg-ref>
 </installer-gui-script>
 DIST_EOF
 

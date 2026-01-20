@@ -1,4 +1,4 @@
-# Speed Monitor v3.1.20 - Organization Internet Monitoring
+# Speed Monitor v3.1.28 - Organization Internet Monitoring
 
 ## IMPORTANT: Version Management
 
