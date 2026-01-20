@@ -121,6 +121,7 @@ home-internet/
 ```
 
 ---
+# Deployment trigger: forcing v3.1.20 to Railway - Jan 20 2026      Page_Down
 
 ## Key Files & Purposes
 
