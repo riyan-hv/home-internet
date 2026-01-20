@@ -311,23 +311,52 @@ class SpeedDataManager: ObservableObject {
         updateStatus = "Downloading..."
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let logFile = NSHomeDirectory() + "/.local/share/nkspeedtest/update.log"
+            func log(_ msg: String) {
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                let logMsg = "[\(timestamp)] \(msg)\n"
+                if let data = logMsg.data(using: .utf8) {
+                    if FileManager.default.fileExists(atPath: logFile) {
+                        if let handle = FileHandle(forWritingAtPath: logFile) {
+                            handle.seekToEndOfFile()
+                            handle.write(data)
+                            handle.closeFile()
+                        }
+                    } else {
+                        try? data.write(to: URL(fileURLWithPath: logFile))
+                    }
+                }
+                print(msg)
+            }
+
+            log("=== Update started ===")
+
             // Step 1: Download the update
+            log("Step 1: Downloading...")
             let downloadScript = """
-            curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip && \
+            curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip 2>&1 && \
             rm -rf /tmp/SpeedMonitor.app && \
-            unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/ && \
+            unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/ 2>&1 && \
             test -d "/tmp/SpeedMonitor.app" && test -f "/tmp/SpeedMonitor.app/Contents/MacOS/SpeedMonitor"
             """
 
             let downloadProcess = Process()
+            let downloadPipe = Pipe()
             downloadProcess.executableURL = URL(fileURLWithPath: "/bin/bash")
             downloadProcess.arguments = ["-c", downloadScript]
+            downloadProcess.standardOutput = downloadPipe
+            downloadProcess.standardError = downloadPipe
 
             do {
                 try downloadProcess.run()
                 downloadProcess.waitUntilExit()
 
+                let downloadOutput = String(data: downloadPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                log("Download output: \(downloadOutput)")
+                log("Download exit code: \(downloadProcess.terminationStatus)")
+
                 if downloadProcess.terminationStatus != 0 {
+                    log("Download failed!")
                     DispatchQueue.main.async {
                         self?.isUpdating = false
                         self?.updateStatus = "✗ Download failed"
@@ -338,45 +367,52 @@ class SpeedDataManager: ObservableObject {
                     return
                 }
 
+                log("Download successful, proceeding to install...")
                 DispatchQueue.main.async {
                     self?.updateStatus = "Installing..."
                 }
 
                 // Step 2: Install with admin privileges (triggers Touch ID / password prompt)
-                let installScript = """
-                rm -rf /Applications/SpeedMonitor.app && \
-                cp -r /tmp/SpeedMonitor.app /Applications/ && \
-                chown -R root:wheel /Applications/SpeedMonitor.app && \
-                rm -f /tmp/SpeedMonitor.app.zip && \
-                rm -rf /tmp/SpeedMonitor.app
-                """
+                let installScript = "rm -rf /Applications/SpeedMonitor.app && cp -r /tmp/SpeedMonitor.app /Applications/ && chown -R root:wheel /Applications/SpeedMonitor.app && rm -f /tmp/SpeedMonitor.app.zip && rm -rf /tmp/SpeedMonitor.app"
+
+                log("Step 2: Running install with admin privileges...")
+                log("Install script: \(installScript)")
 
                 // Use osascript with administrator privileges - this shows Touch ID / password dialog
-                let appleScript = """
-                do shell script "\(installScript)" with administrator privileges
-                """
-
                 let scriptProcess = Process()
+                let scriptPipe = Pipe()
                 scriptProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-                scriptProcess.arguments = ["-e", appleScript]
+                scriptProcess.arguments = ["-e", "do shell script \"\(installScript)\" with administrator privileges"]
+                scriptProcess.standardOutput = scriptPipe
+                scriptProcess.standardError = scriptPipe
 
                 try scriptProcess.run()
                 scriptProcess.waitUntilExit()
 
+                let scriptOutput = String(data: scriptPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                log("Install output: \(scriptOutput)")
+                log("Install exit code: \(scriptProcess.terminationStatus)")
+
                 if scriptProcess.terminationStatus == 0 {
+                    log("Install successful! Launching new app...")
                     // Success - launch new app and quit this instance
                     DispatchQueue.main.async {
                         self?.updateStatus = "✓ Updated! Restarting..."
-                        // Launch the new app
-                        NSWorkspace.shared.openApplication(
-                            at: URL(fileURLWithPath: "/Applications/SpeedMonitor.app"),
-                            configuration: NSWorkspace.OpenConfiguration()
-                        ) { _, _ in
-                            // Quit this instance
-                            NSApplication.shared.terminate(nil)
+                        // Launch the new app after a short delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            let task = Process()
+                            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                            task.arguments = ["/Applications/SpeedMonitor.app"]
+                            try? task.run()
+
+                            // Quit this instance after launching new one
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                NSApplication.shared.terminate(nil)
+                            }
                         }
                     }
                 } else {
+                    log("Install failed or cancelled by user")
                     // User cancelled or error
                     DispatchQueue.main.async {
                         self?.isUpdating = false
@@ -386,8 +422,8 @@ class SpeedDataManager: ObservableObject {
                         }
                     }
                 }
-            } catch {
-                print("Update failed: \(error)")
+            } catch let error {
+                log("Exception: \(error)")
                 DispatchQueue.main.async {
                     self?.isUpdating = false
                     self?.updateStatus = "✗ Update failed"
