@@ -2,6 +2,93 @@ import SwiftUI
 import CoreWLAN
 import CoreLocation
 import AppKit
+import ServiceManagement
+
+// MARK: - Auto Launch Manager
+class AutoLaunchManager {
+    static let shared = AutoLaunchManager()
+
+    var isEnabled: Bool {
+        get {
+            if #available(macOS 13.0, *) {
+                return SMAppService.mainApp.status == .enabled
+            } else {
+                // For older macOS, check UserDefaults
+                return UserDefaults.standard.bool(forKey: "AutoLaunchEnabled")
+            }
+        }
+    }
+
+    func enable() {
+        if #available(macOS 13.0, *) {
+            do {
+                try SMAppService.mainApp.register()
+            } catch {
+                print("Failed to enable auto-launch: \(error)")
+                // Fallback to AppleScript method
+                enableViaAppleScript()
+            }
+        } else {
+            enableViaAppleScript()
+        }
+    }
+
+    func disable() {
+        if #available(macOS 13.0, *) {
+            do {
+                try SMAppService.mainApp.unregister()
+            } catch {
+                print("Failed to disable auto-launch: \(error)")
+                disableViaAppleScript()
+            }
+        } else {
+            disableViaAppleScript()
+        }
+    }
+
+    func toggle() {
+        if isEnabled {
+            disable()
+        } else {
+            enable()
+        }
+    }
+
+    private func enableViaAppleScript() {
+        let script = """
+        tell application "System Events"
+            make login item at end with properties {path:"/Applications/SpeedMonitor.app", hidden:false}
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+        }
+        UserDefaults.standard.set(true, forKey: "AutoLaunchEnabled")
+    }
+
+    private func disableViaAppleScript() {
+        let script = """
+        tell application "System Events"
+            delete login item "SpeedMonitor"
+        end tell
+        """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+        }
+        UserDefaults.standard.set(false, forKey: "AutoLaunchEnabled")
+    }
+
+    // Auto-enable on first launch
+    func setupAutoLaunchIfNeeded() {
+        let hasSetupAutoLaunch = UserDefaults.standard.bool(forKey: "HasSetupAutoLaunch")
+        if !hasSetupAutoLaunch {
+            enable()
+            UserDefaults.standard.set(true, forKey: "HasSetupAutoLaunch")
+        }
+    }
+}
 
 // MARK: - Location Manager
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -537,7 +624,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.23"
+    static let appVersion = "3.1.24"
 
     func checkForUpdate() {
         // Check version directly from GitHub (not Railway) to avoid deployment delays
@@ -894,6 +981,22 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                }
+                .padding(.vertical, 8)
+            }
+
+            // Auto-Launch Section
+            GroupBox("Startup") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(isOn: Binding(
+                        get: { AutoLaunchManager.shared.isEnabled },
+                        set: { _ in AutoLaunchManager.shared.toggle() }
+                    )) {
+                        Text("Launch at Login")
+                    }
+                    Text("Automatically start Speed Monitor when you log in")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
             }
@@ -1351,6 +1454,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var locationManager = LocationManager()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Setup auto-launch on first run
+        AutoLaunchManager.shared.setupAutoLaunchIfNeeded()
+
         // Initial WiFi refresh
         wifiManager.refresh()
 
