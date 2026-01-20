@@ -183,6 +183,7 @@ class SpeedDataManager: ObservableObject {
     @Published var lastError: String = ""
     @Published var lastStatus: String = ""
     @Published var updateAvailable: Bool = false
+    @Published var updateStatus: String = ""
     @Published var isRunningTest: Bool = false
     @Published var isUpdating: Bool = false
     @Published var isSubmittingDiagnostics: Bool = false
@@ -295,7 +296,19 @@ class SpeedDataManager: ObservableObject {
 
     func updateApp() {
         guard !isUpdating else { return }
+
+        // Check if update is available first
+        if !updateAvailable {
+            updateStatus = "✓ Already up to date"
+            // Clear status after 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                self?.updateStatus = ""
+            }
+            return
+        }
+
         isUpdating = true
+        updateStatus = "Downloading..."
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Step 1: Download the update
@@ -317,8 +330,16 @@ class SpeedDataManager: ObservableObject {
                 if downloadProcess.terminationStatus != 0 {
                     DispatchQueue.main.async {
                         self?.isUpdating = false
+                        self?.updateStatus = "✗ Download failed"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            self?.updateStatus = ""
+                        }
                     }
                     return
+                }
+
+                DispatchQueue.main.async {
+                    self?.updateStatus = "Installing..."
                 }
 
                 // Step 2: Install with admin privileges (triggers Touch ID / password prompt)
@@ -345,6 +366,7 @@ class SpeedDataManager: ObservableObject {
                 if scriptProcess.terminationStatus == 0 {
                     // Success - launch new app and quit this instance
                     DispatchQueue.main.async {
+                        self?.updateStatus = "✓ Updated! Restarting..."
                         // Launch the new app
                         NSWorkspace.shared.openApplication(
                             at: URL(fileURLWithPath: "/Applications/SpeedMonitor.app"),
@@ -358,12 +380,20 @@ class SpeedDataManager: ObservableObject {
                     // User cancelled or error
                     DispatchQueue.main.async {
                         self?.isUpdating = false
+                        self?.updateStatus = "✗ Cancelled"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            self?.updateStatus = ""
+                        }
                     }
                 }
             } catch {
                 print("Update failed: \(error)")
                 DispatchQueue.main.async {
                     self?.isUpdating = false
+                    self?.updateStatus = "✗ Update failed"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        self?.updateStatus = ""
+                    }
                 }
             }
         }
@@ -1186,12 +1216,17 @@ struct MenuBarView: View {
             Button(action: { speedData.updateApp() }) {
                 HStack {
                     Image(systemName: speedData.isUpdating ? "hourglass" : "arrow.down.circle.fill")
-                        .foregroundColor(speedData.updateAvailable ? .blue : .primary)
-                    Text(speedData.isUpdating ? "Updating..." : (speedData.updateAvailable ? "Update Available!" : "Update App"))
-                        .fontWeight(speedData.updateAvailable ? .semibold : .regular)
+                        .foregroundColor(speedData.updateAvailable ? .blue : (speedData.updateStatus.contains("✓") ? .green : .primary))
+                    if !speedData.updateStatus.isEmpty {
+                        Text(speedData.updateStatus)
+                            .foregroundColor(speedData.updateStatus.contains("✓") ? .green : (speedData.updateStatus.contains("✗") ? .red : .primary))
+                    } else {
+                        Text(speedData.updateAvailable ? "Update Available!" : "Check for Updates")
+                            .fontWeight(speedData.updateAvailable ? .semibold : .regular)
+                    }
                 }
-                .opacity(speedData.updateAvailable ? (isPulsing ? 1.0 : 0.5) : 1.0)
-                .animation(speedData.updateAvailable ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: isPulsing)
+                .opacity(speedData.updateAvailable && speedData.updateStatus.isEmpty ? (isPulsing ? 1.0 : 0.5) : 1.0)
+                .animation(speedData.updateAvailable && speedData.updateStatus.isEmpty ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: isPulsing)
             }
             .buttonStyle(.plain)
             .disabled(speedData.isUpdating)
