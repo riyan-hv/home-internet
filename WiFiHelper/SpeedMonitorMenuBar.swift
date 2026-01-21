@@ -564,7 +564,7 @@ class SpeedDataManager: ObservableObject {
                 print(msg)
             }
 
-            log("=== Update started (from GitHub, bypassing Railway) ===")
+            log("=== Update started (from GitHub) ===")
 
             // Step 1: Download the update directly from GitHub (app + script)
             log("Step 1: Downloading from GitHub...")
@@ -748,10 +748,10 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.32"
+    static let appVersion = "3.1.33"
 
     func checkForUpdate() {
-        // Check version directly from GitHub (not Railway) to avoid deployment delays
+        // Check version directly from GitHub to avoid deployment delays
         // Add timestamp to bypass GitHub CDN cache
         let timestamp = Int(Date().timeIntervalSince1970)
         let versionURL = URL(string: "https://raw.githubusercontent.com/hyperkishore/home-internet/main/VERSION?t=\(timestamp)")!

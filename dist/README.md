@@ -61,9 +61,9 @@ cp /usr/local/share/speed-monitor/swiftbar-speed.5m.sh \
    npm start
    ```
 
-4. Deploy to Railway (recommended):
+4. Deploy to Render (recommended):
    - Connect your GitHub repo
-   - Railway auto-detects Node.js
+   - Render auto-detects Node.js
    - Set `PORT` environment variable if needed
 
 ### Environment Variables

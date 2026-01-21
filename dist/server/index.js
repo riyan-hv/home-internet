@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
-const APP_VERSION = '3.1.32';
+const APP_VERSION = '3.1.33';
 
 // AP name mapping based on BSSID prefix (first 5 bytes) to handle multiple virtual APs
 const AP_PREFIX_MAP = {
@@ -54,7 +54,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/', limiter);
 
 // Initialize SQLite database with persistent storage
-// Railway provides RAILWAY_VOLUME_MOUNT_PATH, Render uses /data disk mount
+// Render uses /data disk mount for persistence
 const dbPath = process.env.RAILWAY_VOLUME_MOUNT_PATH
   ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'speed_monitor.db')
   : process.env.RENDER && require('fs').existsSync('/data')

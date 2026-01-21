@@ -30,7 +30,7 @@ cd /Users/User/Documents/wifi-resolution/wifi-desktop-analyser
 ./configure-pkg.sh
 
 # You'll be prompted for:
-# - Railway server URL (e.g., https://your-app.up.railway.app)
+# - Render server URL (e.g., https://your-app.onrender.com)
 # - Company name (for branding)
 # - Email domain (optional)
 ```
@@ -82,8 +82,8 @@ Edit `pkg-config.env` after running `./configure-pkg.sh`:
 ```bash
 # Speed Monitor Package Configuration
 
-# REQUIRED: Your Railway server URL
-SERVER_URL="https://your-app.up.railway.app"
+# REQUIRED: Your Render server URL
+SERVER_URL="https://your-app.onrender.com"
 
 # Company name shown in UI
 COMPANY_NAME="Acme Corp"
@@ -402,7 +402,7 @@ pkgbuild --nopayload \
 - `~/.config/nkspeedtest/user_email`
 
 **Server Dashboard:**
-- https://YOUR-RAILWAY-URL.up.railway.app/
+- https://YOUR-RENDER-URL.onrender.com/
 
 ---
 
@@ -438,7 +438,7 @@ A: Yes! Detects Zscaler, Cisco AnyConnect, GlobalProtect, FortiClient, OpenVPN, 
 
 ### Checklist:
 
-- [ ] Run `./configure-pkg.sh` with your Railway URL
+- [ ] Run `./configure-pkg.sh` with your Render URL
 - [ ] Verify `pkg-config.env` has correct settings
 - [ ] Build: `./build-pkg.sh`
 - [ ] Test on clean Mac: `sudo installer -pkg SpeedMonitor-3.1.0.pkg -target /`
@@ -495,7 +495,7 @@ Speed Monitor is open-source software. Check the main repository for license det
 
 - Built for enterprise macOS deployment
 - Uses Homebrew, speedtest-cli (Ookla), CoreWLAN framework
-- Server powered by Node.js + Railway
+- Server powered by Node.js + Render
 
 ---
 

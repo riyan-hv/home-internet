@@ -11,9 +11,9 @@ set -e
 echo "=== Speed Monitor Package Configuration ==="
 echo ""
 
-# Get Railway URL
-echo "Enter your Railway server URL (or press Enter for default):"
-echo "Example: https://your-app.up.railway.app"
+# Get Render URL
+echo "Enter your Render server URL (or press Enter for default):"
+echo "Example: https://your-app.onrender.com"
 read -r SERVER_URL
 
 if [ -z "$SERVER_URL" ]; then

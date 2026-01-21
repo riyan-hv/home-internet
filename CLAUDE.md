@@ -62,7 +62,7 @@ git add dist/SpeedMonitor.app.zip
 
 Speed Monitor is an automated internet performance tracking system for organizations. It consists of:
 - **Client**: macOS shell script that runs speed tests every 10 minutes via launchd
-- **Server**: Node.js/Express API with SQLite database, deployed on Railway
+- **Server**: Node.js/Express API with SQLite database, deployed on Render
 - **Dashboard**: Real-time web dashboard with shadcn-inspired UI
 - **Menu Bar**: Native macOS app showing live connection stats with Location Services support
 - **Self-Service Portal**: Employee-facing dashboard at `/my/:email`
@@ -80,7 +80,7 @@ Speed Monitor is an automated internet performance tracking system for organizat
 
 ```
 ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│  macOS Client   │         │  Railway Server │         │   Dashboard     │
+│  macOS Client   │         │  Render Server  │         │   Dashboard     │
 │                 │  POST   │                 │   GET   │                 │
 │ speed_monitor.sh├────────►│  /api/results   ├────────►│  dashboard.html │
 │ (launchd 10min) │         │  (SQLite DB)    │         │  (Chart.js)     │
@@ -110,7 +110,7 @@ home-internet/
 │   └── server/
 │       ├── index.js             # Express server (v3.1)
 │       ├── package.json         # Node dependencies
-│       ├── Dockerfile           # Railway deployment
+│       ├── Dockerfile           # Render deployment
 │       └── public/
 │           ├── dashboard.html   # IT Admin dashboard (shadcn UI)
 │           ├── my.html          # Employee portal landing page
@@ -121,7 +121,7 @@ home-internet/
 ```
 
 ---
-<!-- Railway deployment trigger: v3.1.20 - 2026-01-20T18:51:32 -->
+<!-- Render deployment - migrated from Railway 2026-01-21 -->
 
 ## Key Files & Purposes
 
@@ -257,11 +257,11 @@ system_profiler SPAirPortDataType | grep -A 10 "Current Network"
 **Note**: SSID is redacted by macOS privacy, but all metrics (RSSI, MCS, Channel, Band) are available
 
 ### 4. Server: Database reset on deploy
-**Cause**: Railway ephemeral filesystem - SQLite file deleted on redeploy
-**Solution**: Use Railway's persistent volume or migrate to PostgreSQL
+**Cause**: Render ephemeral filesystem - SQLite file deleted on redeploy
+**Solution**: Use Render's persistent disk or migrate to PostgreSQL
 ```bash
 # Current workaround: data is transient, acceptable for monitoring
-# For persistence: Railway → Settings → Add Volume → Mount at /data
+# For persistence: Render → Dashboard → Disk → Mount at /data
 ```
 
 ### 5. Server: ISP lookup failing
@@ -298,11 +298,11 @@ tail -50 ~/.local/share/nkspeedtest/launchd_stderr.log
 
 ---
 
-## Deployment (Railway)
+## Deployment (Render)
 
 ### Environment Variables
 ```
-PORT=3000              # Set automatically by Railway
+PORT=3000              # Set automatically by Render
 DB_PATH=./speed_monitor.db
 ```
 
