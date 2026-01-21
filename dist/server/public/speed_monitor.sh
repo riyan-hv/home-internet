@@ -9,7 +9,7 @@
 # v2.1.0: Added WiFi debugging metrics (MCS, error rates, BSSID tracking)
 #
 
-APP_VERSION="3.1.31"
+APP_VERSION="3.1.32"
 
 # Configuration
 DATA_DIR="$HOME/.local/share/nkspeedtest"

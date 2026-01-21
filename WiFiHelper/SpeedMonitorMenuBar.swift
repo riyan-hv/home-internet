@@ -566,13 +566,14 @@ class SpeedDataManager: ObservableObject {
 
             log("=== Update started (from GitHub, bypassing Railway) ===")
 
-            // Step 1: Download the update directly from GitHub
+            // Step 1: Download the update directly from GitHub (app + script)
             log("Step 1: Downloading from GitHub...")
             let downloadScript = """
             curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip 2>&1 && \
+            curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/server/public/speed_monitor.sh" -o /tmp/speed_monitor.sh 2>&1 && \
             rm -rf /tmp/SpeedMonitor.app && \
             unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/ 2>&1 && \
-            test -d "/tmp/SpeedMonitor.app" && test -f "/tmp/SpeedMonitor.app/Contents/MacOS/SpeedMonitor"
+            test -d "/tmp/SpeedMonitor.app" && test -f "/tmp/SpeedMonitor.app/Contents/MacOS/SpeedMonitor" && test -f "/tmp/speed_monitor.sh"
             """
 
             let downloadProcess = Process()
@@ -608,7 +609,16 @@ class SpeedDataManager: ObservableObject {
                 }
 
                 // Step 2: Install with admin privileges (triggers Touch ID / password prompt)
-                let installScript = "rm -rf /Applications/SpeedMonitor.app && cp -r /tmp/SpeedMonitor.app /Applications/ && chown -R root:wheel /Applications/SpeedMonitor.app && rm -f /tmp/SpeedMonitor.app.zip && rm -rf /tmp/SpeedMonitor.app"
+                // Install app + update speed_monitor.sh in both possible locations
+                let userHome = NSHomeDirectory()
+                let installScript = """
+                rm -rf /Applications/SpeedMonitor.app && \
+                cp -r /tmp/SpeedMonitor.app /Applications/ && \
+                chown -R root:wheel /Applications/SpeedMonitor.app && \
+                if [ -d /usr/local/speedmonitor/bin ]; then cp /tmp/speed_monitor.sh /usr/local/speedmonitor/bin/speed_monitor.sh && chmod +x /usr/local/speedmonitor/bin/speed_monitor.sh; fi && \
+                mkdir -p \(userHome)/.local/bin && cp /tmp/speed_monitor.sh \(userHome)/.local/bin/speed_monitor.sh && chmod +x \(userHome)/.local/bin/speed_monitor.sh && \
+                rm -f /tmp/SpeedMonitor.app.zip /tmp/speed_monitor.sh && rm -rf /tmp/SpeedMonitor.app
+                """
 
                 log("Step 2: Running install with admin privileges...")
                 log("Install script: \(installScript)")
@@ -738,7 +748,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.31"
+    static let appVersion = "3.1.32"
 
     func checkForUpdate() {
         // Check version directly from GitHub (not Railway) to avoid deployment delays
