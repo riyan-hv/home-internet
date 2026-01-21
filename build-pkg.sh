@@ -33,7 +33,7 @@ if [ -f "pkg-config.env" ]; then
 else
     echo "No configuration found. Using defaults."
     echo "Run ./configure-pkg.sh to customize settings."
-    SERVER_URL="https://home-internet-production.up.railway.app"
+    SERVER_URL="https://home-internet.onrender.com"
     COMPANY_NAME="Your Company"
     EMAIL_DOMAIN="yourcompany.com"
 fi

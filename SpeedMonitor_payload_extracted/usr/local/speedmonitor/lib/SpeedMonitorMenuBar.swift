@@ -144,7 +144,7 @@ class SpeedDataManager: ObservableObject {
             process.arguments = [scriptPath]
             process.environment = ProcessInfo.processInfo.environment
             process.environment?["PATH"] = "\(NSHomeDirectory())/.local/bin:/usr/local/speedmonitor/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            process.environment?["SPEED_MONITOR_SERVER"] = "https://home-internet-production.up.railway.app"
+            process.environment?["SPEED_MONITOR_SERVER"] = "https://home-internet.onrender.com"
 
             do {
                 try process.run()
@@ -236,7 +236,7 @@ class SpeedDataManager: ObservableObject {
     }
 
     func checkForUpdate() {
-        let versionURL = URL(string: "https://home-internet-production.up.railway.app/api/version")!
+        let versionURL = URL(string: "https://home-internet.onrender.com/api/version")!
         URLSession.shared.dataTask(with: versionURL) { [weak self] data, _, _ in
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -342,7 +342,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Dashboard:")
                         Spacer()
-                        Link("Open Dashboard", destination: URL(string: "https://home-internet-production.up.railway.app/")!)
+                        Link("Open Dashboard", destination: URL(string: "https://home-internet.onrender.com/")!)
                     }
                 }
                 .padding(.vertical, 8)
@@ -500,7 +500,7 @@ struct MenuBarView: View {
             }
 
             Button(action: {
-                if let url = URL(string: "https://home-internet-production.up.railway.app/") {
+                if let url = URL(string: "https://home-internet.onrender.com/") {
                     NSWorkspace.shared.open(url)
                 }
             }) {

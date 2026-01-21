@@ -27,7 +27,7 @@
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>SPEED_MONITOR_SERVER</key>
-        <string>https://home-internet-production.up.railway.app</string>
+        <string>https://home-internet.onrender.com</string>
     </dict>
 </dict>
 </plist>

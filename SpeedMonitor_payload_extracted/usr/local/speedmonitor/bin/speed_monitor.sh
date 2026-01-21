@@ -17,7 +17,7 @@ CONFIG_DIR="$HOME/.config/nkspeedtest"
 CSV_FILE="$DATA_DIR/speed_log.csv"
 LOG_FILE="$DATA_DIR/speed_monitor.log"
 # Server configuration
-SERVER_URL="${SPEED_MONITOR_SERVER:-https://home-internet-production.up.railway.app}"
+SERVER_URL="${SPEED_MONITOR_SERVER:-https://home-internet.onrender.com}"
 
 # Monolithic paths
 SPEEDTEST_BIN="/usr/local/speedmonitor/bin/speedtest-cli"

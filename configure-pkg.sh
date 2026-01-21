@@ -17,7 +17,7 @@ echo "Example: https://your-app.up.railway.app"
 read -r SERVER_URL
 
 if [ -z "$SERVER_URL" ]; then
-    SERVER_URL="https://home-internet-production.up.railway.app"
+    SERVER_URL="https://home-internet.onrender.com"
     echo "Using default: $SERVER_URL"
 fi
 

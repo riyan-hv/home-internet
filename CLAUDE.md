@@ -69,9 +69,9 @@ Speed Monitor is an automated internet performance tracking system for organizat
 - **Self-Update**: Built-in update mechanism via `speed_monitor.sh --update`
 
 **Live URLs:**
-- Dashboard: https://home-internet-production.up.railway.app/
-- Self-Service Portal: https://home-internet-production.up.railway.app/my
-- Setup Guide: https://home-internet-production.up.railway.app/setup
+- Dashboard: https://home-internet.onrender.com/
+- Self-Service Portal: https://home-internet.onrender.com/my
+- Setup Guide: https://home-internet.onrender.com/setup
 - GitHub: https://github.com/hyperkishore/home-internet
 
 ---

@@ -308,7 +308,7 @@ tail -f ~/.local/share/nkspeedtest/speed_monitor.log
 
 Open your browser to:
 ```
-https://home-internet-production.up.railway.app/
+https://home-internet.onrender.com/
 ```
 
 ---

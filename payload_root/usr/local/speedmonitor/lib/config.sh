@@ -3,7 +3,7 @@
 # Edit this file to customize deployment
 
 # Server URL (REQUIRED - update this!)
-SERVER_URL="https://home-internet-production.up.railway.app"
+SERVER_URL="https://home-internet.onrender.com"
 
 # Company name for branding
 COMPANY_NAME="Your Company"

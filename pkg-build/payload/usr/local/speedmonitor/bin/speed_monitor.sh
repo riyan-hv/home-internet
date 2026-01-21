@@ -19,7 +19,7 @@ LOG_FILE="$DATA_DIR/speed_monitor.log"
 WIFI_HELPER="$HOME/.local/bin/wifi_info"
 
 # Server configuration
-SERVER_URL="${SPEED_MONITOR_SERVER:-https://home-internet-production.up.railway.app}"
+SERVER_URL="${SPEED_MONITOR_SERVER:-https://home-internet.onrender.com}"
 
 # Ensure directories exist
 mkdir -p "$DATA_DIR" "$CONFIG_DIR"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Speed Monitor v3.1.30 - One-line installer for employees
+# Speed Monitor v3.1.31 - One-line installer for employees
 # Install:   bash <(curl -fsSL https://home-internet.onrender.com/install.sh)
 # Uninstall: bash <(curl -fsSL https://home-internet.onrender.com/uninstall.sh)
 
@@ -13,7 +13,7 @@ BIN_DIR="$HOME/.local/bin"
 PLIST_NAME="com.speedmonitor.plist"
 MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
 
-echo "=== Speed Monitor v3.1.30 Installer ==="
+echo "=== Speed Monitor v3.1.31 Installer ==="
 echo ""
 
 # Create directories
