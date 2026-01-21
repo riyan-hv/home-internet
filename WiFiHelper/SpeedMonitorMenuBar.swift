@@ -564,9 +564,9 @@ class SpeedDataManager: ObservableObject {
                 print(msg)
             }
 
-            log("=== Update started (from GitHub) ===")
+            log("=== Update started (from GitHub) - FULL REINSTALL ===")
 
-            // Step 1: Download the update directly from GitHub (app + script)
+            // Step 1: Download the update directly from GitHub (app + script + install.sh)
             log("Step 1: Downloading from GitHub...")
             let downloadScript = """
             curl -fsSL "https://raw.githubusercontent.com/hyperkishore/home-internet/main/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip 2>&1 && \
@@ -603,24 +603,59 @@ class SpeedDataManager: ObservableObject {
                     return
                 }
 
-                log("Download successful, proceeding to install...")
+                log("Download successful, proceeding to full reinstall...")
                 DispatchQueue.main.async {
                     self?.updateStatus = "Installing..."
                 }
 
-                // Step 2: Install with admin privileges (triggers Touch ID / password prompt)
-                // Install app + update speed_monitor.sh in both possible locations
+                // Step 2: FULL REINSTALL with admin privileges
+                // This completely removes old files and installs fresh copies everywhere
                 let userHome = NSHomeDirectory()
+                let serverURL = "https://home-internet.onrender.com"
+
+                // Comprehensive install script that:
+                // 1. Removes old app
+                // 2. Installs new app
+                // 3. Removes any symlinks at ~/.local/bin/speed_monitor.sh
+                // 4. Creates fresh directories
+                // 5. Installs script to BOTH locations as real files
+                // 6. Updates launchd plist with correct server URL
+                // 7. Reloads launchd service
                 let installScript = """
+                echo 'Step 1: Remove old app...' && \
                 rm -rf /Applications/SpeedMonitor.app && \
+                echo 'Step 2: Install new app...' && \
                 cp -r /tmp/SpeedMonitor.app /Applications/ && \
-                chown -R root:wheel /Applications/SpeedMonitor.app && \
+                xattr -cr /Applications/SpeedMonitor.app && \
+                codesign --force --deep --sign - /Applications/SpeedMonitor.app 2>/dev/null || true && \
+                echo 'Step 3: Clean up old script locations...' && \
+                rm -f \(userHome)/.local/bin/speed_monitor.sh 2>/dev/null || true && \
+                rm -f /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true && \
+                echo 'Step 4: Create fresh directories...' && \
+                mkdir -p \(userHome)/.local/bin && \
+                mkdir -p \(userHome)/.local/share/nkspeedtest && \
+                mkdir -p \(userHome)/.config/nkspeedtest && \
+                echo 'Step 5: Install fresh script to ~/.local/bin...' && \
+                cp /tmp/speed_monitor.sh \(userHome)/.local/bin/speed_monitor.sh && \
+                chmod +x \(userHome)/.local/bin/speed_monitor.sh && \
+                chown \(NSUserName()) \(userHome)/.local/bin/speed_monitor.sh && \
+                echo 'Step 6: Install fresh script to /usr/local/speedmonitor/bin (if exists)...' && \
                 if [ -d /usr/local/speedmonitor/bin ]; then cp /tmp/speed_monitor.sh /usr/local/speedmonitor/bin/speed_monitor.sh && chmod +x /usr/local/speedmonitor/bin/speed_monitor.sh; fi && \
-                mkdir -p \(userHome)/.local/bin && cp /tmp/speed_monitor.sh \(userHome)/.local/bin/speed_monitor.sh && chmod +x \(userHome)/.local/bin/speed_monitor.sh && \
-                rm -f /tmp/SpeedMonitor.app.zip /tmp/speed_monitor.sh && rm -rf /tmp/SpeedMonitor.app
+                echo 'Step 7: Update launchd plist with correct server URL...' && \
+                PLIST=\(userHome)/Library/LaunchAgents/com.speedmonitor.plist && \
+                if [ -f $PLIST ]; then \
+                    /usr/libexec/PlistBuddy -c 'Delete :EnvironmentVariables:SPEED_MONITOR_SERVER' $PLIST 2>/dev/null || true; \
+                    /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:SPEED_MONITOR_SERVER string \(serverURL)' $PLIST 2>/dev/null || true; \
+                fi && \
+                echo 'Step 8: Reload launchd service...' && \
+                launchctl unload \(userHome)/Library/LaunchAgents/com.speedmonitor.plist 2>/dev/null || true && \
+                launchctl load \(userHome)/Library/LaunchAgents/com.speedmonitor.plist 2>/dev/null || true && \
+                echo 'Step 9: Cleanup temp files...' && \
+                rm -f /tmp/SpeedMonitor.app.zip /tmp/speed_monitor.sh && rm -rf /tmp/SpeedMonitor.app && \
+                echo 'FULL REINSTALL COMPLETE'
                 """
 
-                log("Step 2: Running install with admin privileges...")
+                log("Step 2: Running FULL REINSTALL with admin privileges...")
                 log("Install script: \(installScript)")
 
                 // Use osascript with administrator privileges - this shows Touch ID / password dialog
@@ -748,7 +783,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.33"
+    static let appVersion = "3.1.34"
 
     func checkForUpdate() {
         // Check version directly from GitHub to avoid deployment delays
