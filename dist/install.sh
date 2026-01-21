@@ -92,14 +92,44 @@ if ! command -v speedtest-cli &> /dev/null; then
     brew install speedtest-cli < /dev/null
 fi
 
-# Clean up old symlinks (from previous PKG installs) before downloading
+# === FULL CLEANUP: Remove ALL old installations ===
+echo "Cleaning up old installations..."
+
+# Stop any running launchd services
+launchctl unload "$HOME/Library/LaunchAgents/$PLIST_NAME" 2>/dev/null || true
+launchctl unload "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" 2>/dev/null || true
+
+# Remove old scripts from ~/.local/bin (curl install location)
 rm -f "$BIN_DIR/speed_monitor.sh" 2>/dev/null || true
 rm -f "$BIN_DIR/wifi_info" 2>/dev/null || true
+
+# Remove old scripts from /usr/local/speedmonitor/bin (PKG install location)
+if [[ -d "/usr/local/speedmonitor/bin" ]]; then
+    echo "Removing old PKG installation files..."
+    rm -f /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true
+    rm -f /usr/local/speedmonitor/bin/wifi_info 2>/dev/null || true
+    # If we couldn't remove (no permission), at least copy new version there
+    if [[ -f "/usr/local/speedmonitor/bin/speed_monitor.sh" ]]; then
+        echo "Note: Could not remove old PKG files. Will install new script to both locations."
+    fi
+fi
+
+# Remove old app
+rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+
+echo "✓ Old installations cleaned up"
 
 # Download the speed monitor script
 echo "Downloading speed monitor script..."
 curl -fsSL "$DOWNLOAD_URL/speed_monitor.sh" -o "$BIN_DIR/speed_monitor.sh"
 chmod +x "$BIN_DIR/speed_monitor.sh"
+
+# Also install to PKG location if it exists (for backwards compatibility)
+if [[ -d "/usr/local/speedmonitor/bin" ]]; then
+    echo "Installing to PKG location for backwards compatibility..."
+    cp "$BIN_DIR/speed_monitor.sh" /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true
+    chmod +x /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true
+fi
 
 # Fix CSV header if it's out of sync (upgrade scenario)
 CSV_FILE="$SCRIPT_DIR/speed_log.csv"
