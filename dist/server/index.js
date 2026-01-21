@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
-const APP_VERSION = '3.1.34';
+const APP_VERSION = '3.1.35';
 
 // AP name mapping based on BSSID prefix (first 5 bytes) to handle multiple virtual APs
 const AP_PREFIX_MAP = {
@@ -535,7 +535,7 @@ app.get('/api/stats', (req, res) => {
         ROUND(MIN(download_mbps), 2) as min_download,
         ROUND(MAX(download_mbps), 2) as max_download
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
     `).get();
 
     // Per-device stats
@@ -555,7 +555,7 @@ app.get('/api/stats', (req, res) => {
         MAX(vpn_status) as vpn_status,
         MAX(vpn_name) as vpn_name
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
       GROUP BY device_id
       ORDER BY last_test DESC
     `).all();
@@ -569,7 +569,7 @@ app.get('/api/stats', (req, res) => {
         ROUND(AVG(jitter_ms), 2) as avg_jitter,
         COUNT(*) as test_count
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
         AND timestamp_utc > datetime('now', '-24 hours')
       GROUP BY hour
       ORDER BY hour
@@ -600,7 +600,7 @@ app.get('/api/stats/wifi', (req, res) => {
         ROUND(AVG(jitter_ms), 2) as avg_jitter,
         ROUND(AVG(packet_loss_pct), 2) as avg_packet_loss
       FROM speed_results
-      WHERE status = 'success' AND bssid IS NOT NULL AND bssid != 'none'
+      WHERE status LIKE 'success%' AND bssid IS NOT NULL AND bssid != 'none'
       GROUP BY bssid
       ORDER BY test_count DESC
     `).all();
@@ -616,7 +616,7 @@ app.get('/api/stats/wifi', (req, res) => {
         ROUND(AVG(upload_mbps), 2) as avg_upload,
         ROUND(AVG(rssi_dbm), 0) as avg_rssi
       FROM speed_results
-      WHERE status = 'success' AND ssid IS NOT NULL
+      WHERE status LIKE 'success%' AND ssid IS NOT NULL
       GROUP BY ssid
       ORDER BY test_count DESC
     `).all();
@@ -628,7 +628,7 @@ app.get('/api/stats/wifi', (req, res) => {
         COUNT(*) as count,
         ROUND(AVG(download_mbps), 2) as avg_download
       FROM speed_results
-      WHERE status = 'success' AND band IS NOT NULL AND band != 'none'
+      WHERE status LIKE 'success%' AND band IS NOT NULL AND band != 'none'
       GROUP BY band
     `).all();
 
@@ -659,7 +659,7 @@ app.get('/api/stats/vpn', (req, res) => {
         ROUND(AVG(latency_ms), 2) as avg_latency,
         ROUND(AVG(jitter_ms), 2) as avg_jitter
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
       GROUP BY vpn_status, vpn_name
       ORDER BY count DESC
     `).all();
@@ -675,7 +675,7 @@ app.get('/api/stats/vpn', (req, res) => {
         ROUND(AVG(jitter_ms), 2) as avg_jitter,
         ROUND(AVG(packet_loss_pct), 2) as avg_packet_loss
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
       GROUP BY mode
     `).all();
 
@@ -701,7 +701,7 @@ app.get('/api/stats/jitter', (req, res) => {
         COUNT(*) as count,
         ROUND(AVG(download_mbps), 2) as avg_download
       FROM speed_results
-      WHERE status = 'success' AND jitter_ms IS NOT NULL
+      WHERE status LIKE 'success%' AND jitter_ms IS NOT NULL
       GROUP BY bucket
       ORDER BY
         CASE bucket
@@ -723,7 +723,7 @@ app.get('/api/stats/jitter', (req, res) => {
         ROUND(AVG(packet_loss_pct), 2) as avg_packet_loss,
         MAX(timestamp_utc) as last_test
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
       GROUP BY device_id
       HAVING AVG(jitter_ms) > 20 OR AVG(packet_loss_pct) > 1
       ORDER BY avg_jitter DESC
@@ -1068,7 +1068,7 @@ app.get('/api/stats/timeline', (req, res) => {
         ssid,
         rssi_dbm
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
         AND timestamp_utc > datetime('now', '-' || ? || ' hours')
       ORDER BY timestamp_utc ASC
     `).all(hours);
@@ -1615,7 +1615,7 @@ app.get('/api/stats/isp', async (req, res) => {
         ROUND(AVG(latency_ms), 2) as avg_latency,
         ROUND(AVG(jitter_ms), 2) as avg_jitter
       FROM speed_results
-      WHERE status = 'success' AND public_ip IS NOT NULL AND public_ip != ''
+      WHERE status LIKE 'success%' AND public_ip IS NOT NULL AND public_ip != ''
       GROUP BY public_ip
       HAVING test_count >= 3
       ORDER BY test_count DESC
@@ -1689,7 +1689,7 @@ app.get('/api/stats/timeofday', (req, res) => {
         ROUND(AVG(upload_mbps), 2) as avg_upload,
         ROUND(AVG(jitter_ms), 2) as avg_jitter
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
         AND timestamp_utc > datetime('now', '-' || ? || ' days')
       GROUP BY hour, day_of_week
       ORDER BY day_of_week, hour
@@ -1751,7 +1751,7 @@ app.get('/api/stats/trends', (req, res) => {
         SUM(CASE WHEN vpn_status = 'connected' THEN 1 ELSE 0 END) as vpn_on_tests,
         SUM(CASE WHEN vpn_status = 'disconnected' THEN 1 ELSE 0 END) as vpn_off_tests
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
         AND timestamp_utc > datetime('now', '-' || ? || ' days')
       GROUP BY date(timestamp_utc)
       ORDER BY date
@@ -1803,7 +1803,7 @@ app.get('/api/stats/channels', (req, res) => {
         ROUND(AVG(rssi_dbm), 0) as avg_rssi,
         ROUND(AVG(jitter_ms), 2) as avg_jitter
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
         AND channel > 0
         AND timestamp_utc > datetime('now', '-7 days')
       GROUP BY channel, band
@@ -1826,7 +1826,7 @@ app.get('/api/recommendations/wifi', (req, res) => {
              ROUND(AVG(download_mbps), 2) as avg_speed,
              ROUND(AVG(rssi_dbm), 0) as avg_rssi
       FROM speed_results
-      WHERE status = 'success' AND channel > 0
+      WHERE status LIKE 'success%' AND channel > 0
         AND timestamp_utc > datetime('now', '-7 days')
       GROUP BY channel, band
       ORDER BY devices DESC
@@ -1873,7 +1873,7 @@ app.get('/api/recommendations/wifi', (req, res) => {
              ROUND(AVG(download_mbps), 2) as avg_download,
              COUNT(DISTINCT device_id) as devices
       FROM speed_results
-      WHERE status = 'success' AND band IN ('2.4GHz', '5GHz')
+      WHERE status LIKE 'success%' AND band IN ('2.4GHz', '5GHz')
         AND timestamp_utc > datetime('now', '-7 days')
       GROUP BY band
     `).all();
@@ -2235,7 +2235,7 @@ app.get('/api/stats/link-quality-correlation', (req, res) => {
         input_error_rate,
         output_error_rate
       FROM speed_results
-      WHERE status = 'success'
+      WHERE status LIKE 'success%'
         AND rssi_dbm < 0
         AND download_mbps > 0
         AND timestamp_utc > datetime('now', '-' || ? || ' days')
