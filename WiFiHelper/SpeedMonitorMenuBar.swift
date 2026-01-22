@@ -835,7 +835,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.42"
+    static let appVersion = "3.1.43"
 
     func checkForUpdate() {
         // Check version directly from GitHub to avoid deployment delays
@@ -1696,6 +1696,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Initial WiFi refresh
         wifiManager.refresh()
+
+        // Auto-prompt for Location Services if not determined
+        // This is needed for WiFi SSID detection on macOS
+        if locationManager.authorizationStatus == .notDetermined {
+            // Delay slightly to ensure UI is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.locationManager.requestPermission()
+            }
+        }
 
         // Create status item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

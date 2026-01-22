@@ -5,7 +5,7 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 
-const APP_VERSION = "3.1.42";
+const APP_VERSION = "3.1.43";
 
 // Admin authentication configuration
 // Password is hashed using SHA-256 for security
@@ -365,6 +365,20 @@ async function initDatabase() {
 
       CREATE INDEX IF NOT EXISTS idx_commands_device_status ON device_commands(device_id, status);
       CREATE INDEX IF NOT EXISTS idx_commands_created ON device_commands(created_at);
+
+      -- v3.1.43: Command execution logs for real-time progress tracking
+      CREATE TABLE IF NOT EXISTS command_logs (
+        id SERIAL PRIMARY KEY,
+        command_id INTEGER NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        level TEXT DEFAULT 'info',      -- info, warning, error, success
+        message TEXT NOT NULL,
+        metadata JSONB,
+        FOREIGN KEY (command_id) REFERENCES device_commands(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_command_logs_command_id ON command_logs(command_id);
+      CREATE INDEX IF NOT EXISTS idx_command_logs_timestamp ON command_logs(timestamp);
     `);
     console.log('Database schema initialized');
   } catch (err) {
@@ -2211,9 +2225,131 @@ app.post('/api/commands/:id/result', async (req, res) => {
       WHERE id = $3
     `, [status, result || null, id]);
 
+    // Add final log entry
+    const level = status === 'executed' ? 'success' : 'error';
+    const message = status === 'executed' ? 'Command completed successfully' : `Command failed: ${result || 'Unknown error'}`;
+    await pool.query(`
+      INSERT INTO command_logs (command_id, level, message, metadata)
+      VALUES ($1, $2, $3, $4)
+    `, [id, level, message, JSON.stringify({ status, result })]);
+
     res.json({ success: true });
   } catch (err) {
     console.error('Error updating command result:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Report command progress (called by client during command execution)
+// POST /api/commands/:id/progress
+app.post('/api/commands/:id/progress', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, message, timestamp, level } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    // Update command status if provided
+    if (status) {
+      const validStatuses = ['pending', 'acknowledged', 'running', 'executed', 'failed'];
+      if (validStatuses.includes(status)) {
+        await pool.query(`
+          UPDATE device_commands SET status = $1 WHERE id = $2
+        `, [status, id]);
+      }
+    }
+
+    // Add log entry
+    await pool.query(`
+      INSERT INTO command_logs (command_id, level, message, metadata)
+      VALUES ($1, $2, $3, $4)
+    `, [id, level || 'info', message, JSON.stringify({ status, client_timestamp: timestamp })]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error reporting progress:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get logs for a specific command
+// GET /api/commands/:id/logs
+app.get('/api/commands/:id/logs', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const command = await pool.query(`
+      SELECT c.*,
+        (SELECT hostname FROM speed_results WHERE device_id = c.device_id ORDER BY timestamp_utc DESC LIMIT 1) as hostname,
+        (SELECT user_email FROM speed_results WHERE device_id = c.device_id ORDER BY timestamp_utc DESC LIMIT 1) as user_email
+      FROM device_commands c
+      WHERE c.id = $1
+    `, [id]);
+
+    if (command.rows.length === 0) {
+      return res.status(404).json({ error: 'Command not found' });
+    }
+
+    const logs = await pool.query(`
+      SELECT * FROM command_logs WHERE command_id = $1 ORDER BY timestamp ASC
+    `, [id]);
+
+    res.json({
+      command: command.rows[0],
+      logs: logs.rows
+    });
+  } catch (err) {
+    console.error('Error fetching command logs:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all command logs (for dedicated logs page)
+// GET /api/logs?device_id=xxx&command=force_update&status=executed&limit=100&offset=0
+app.get('/api/logs', async (req, res) => {
+  try {
+    const { device_id, command, status, limit = 100, offset = 0 } = req.query;
+
+    let whereConditions = [];
+    let params = [];
+    let paramIndex = 1;
+
+    if (device_id) {
+      whereConditions.push(`LOWER(dc.device_id) = $${paramIndex++}`);
+      params.push(device_id.toLowerCase());
+    }
+    if (command) {
+      whereConditions.push(`dc.command = $${paramIndex++}`);
+      params.push(command);
+    }
+    if (status) {
+      whereConditions.push(`dc.status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    const whereClause = whereConditions.length > 0
+      ? 'WHERE ' + whereConditions.join(' AND ')
+      : '';
+
+    const result = await pool.query(`
+      SELECT
+        dc.*,
+        (SELECT hostname FROM speed_results WHERE device_id = dc.device_id ORDER BY timestamp_utc DESC LIMIT 1) as hostname,
+        (SELECT user_email FROM speed_results WHERE device_id = dc.device_id ORDER BY timestamp_utc DESC LIMIT 1) as user_email,
+        (SELECT json_agg(cl ORDER BY cl.timestamp)
+         FROM command_logs cl
+         WHERE cl.command_id = dc.id) as logs
+      FROM device_commands dc
+      ${whereClause}
+      ORDER BY dc.created_at DESC
+      LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+    `, [...params, parseInt(limit), parseInt(offset)]);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching logs:', err);
     res.status(500).json({ error: err.message });
   }
 });

@@ -9,7 +9,7 @@
 # v2.1.0: Added WiFi debugging metrics (MCS, error rates, BSSID tracking)
 #
 
-APP_VERSION="3.1.41"
+APP_VERSION="3.1.43"
 
 # Configuration
 DATA_DIR="$HOME/.local/share/nkspeedtest"
@@ -244,7 +244,28 @@ get_hostname() {
 
 # Get WiFi details via SpeedMonitor.app, Swift helper, or system_profiler fallback
 get_wifi_details() {
-    # Priority 1: SpeedMonitor.app (best: has Location Services UI for SSID)
+    # Priority 0: Check cache file written by running SpeedMonitor.app menu bar app
+    # This is the best source because the running app has Location Services permission
+    local wifi_cache="$DATA_DIR/wifi_cache.txt"
+    if [[ -f "$wifi_cache" ]]; then
+        # Check if cache is fresh (less than 2 minutes old)
+        local cache_age=$(($(date +%s) - $(stat -f%m "$wifi_cache" 2>/dev/null || echo 0)))
+        if [[ $cache_age -lt 120 ]]; then
+            local wifi_output=$(cat "$wifi_cache")
+            # Verify it has valid data
+            if echo "$wifi_output" | grep -q "CONNECTED=true"; then
+                local cached_ssid=$(echo "$wifi_output" | grep "^SSID=" | cut -d= -f2)
+                # Only use cache if SSID is not generic "WiFi" or "Not Connected"
+                if [[ -n "$cached_ssid" && "$cached_ssid" != "WiFi" && "$cached_ssid" != "Not Connected" ]]; then
+                    log "Using WiFi cache (age: ${cache_age}s, SSID: $cached_ssid)"
+                    echo "$wifi_output"
+                    return
+                fi
+            fi
+        fi
+    fi
+
+    # Priority 1: SpeedMonitor.app --output (launches new instance, may not have Location Services)
     local speedmonitor_app="/Applications/SpeedMonitor.app/Contents/MacOS/SpeedMonitor"
     if [[ -x "$speedmonitor_app" ]]; then
         local wifi_output=$("$speedmonitor_app" --output 2>/dev/null)

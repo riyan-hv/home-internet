@@ -2,7 +2,7 @@
 # Speed Monitor - Command Listener
 # Lightweight daemon that polls for remote commands every 30 seconds
 # Runs independently of the main speed test cycle
-# Version: 3.1.41
+# Version: 3.1.43
 
 set -euo pipefail
 
@@ -51,6 +51,22 @@ report_result() {
         >/dev/null 2>&1 || true
 }
 
+# Report progress (intermediate status updates with logging)
+report_progress() {
+    local cmd_id="$1"
+    local status="$2"
+    local message="$3"
+    local level="${4:-info}"
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    log "Progress: $message"
+
+    curl -s --max-time 10 -X POST "$SERVER_URL/api/commands/$cmd_id/progress" \
+        -H "Content-Type: application/json" \
+        -d "{\"status\":\"$status\",\"message\":\"$message\",\"timestamp\":\"$timestamp\",\"level\":\"$level\"}" \
+        >/dev/null 2>&1 || true
+}
+
 # Execute a command
 execute_command() {
     local cmd_id="$1"
@@ -61,25 +77,61 @@ execute_command() {
 
     case "$command" in
         force_update)
-            log "Running force update..."
-            if [[ -x "$SPEED_MONITOR_SCRIPT" ]]; then
-                "$SPEED_MONITOR_SCRIPT" --update >> "$LOG_FILE" 2>&1
-                report_result "$cmd_id" "executed" "Update completed"
-                log "Force update completed"
+            log "Running force update (full installer)..."
+            report_progress "$cmd_id" "running" "Starting full update process..."
+
+            # Download the full installer
+            local install_script="/tmp/speedmonitor_update_$$.sh"
+            report_progress "$cmd_id" "running" "Downloading installer from server..."
+
+            if ! curl -fsSL --max-time 60 "$SERVER_URL/install.sh" -o "$install_script" 2>&1; then
+                report_result "$cmd_id" "failed" "Failed to download installer"
+                log "ERROR: Failed to download install.sh"
+                rm -f "$install_script"
+                break
+            fi
+
+            report_progress "$cmd_id" "running" "Installer downloaded, running in non-interactive mode..."
+
+            # Run installer in force/non-interactive mode
+            local output
+            if output=$(bash "$install_script" --force 2>&1); then
+                # Get new version
+                local new_version="unknown"
+                if [[ -x "$SPEED_MONITOR_SCRIPT" ]]; then
+                    new_version=$("$SPEED_MONITOR_SCRIPT" --version 2>/dev/null | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "unknown")
+                fi
+
+                report_progress "$cmd_id" "running" "Installation complete, version: $new_version" "success"
+                report_result "$cmd_id" "executed" "Updated to v$new_version"
+                log "Force update completed: v$new_version"
+
+                # Cleanup
+                rm -f "$install_script"
+
+                # The listener itself may have been updated, so restart it
+                log "Restarting command listener..."
+                exec "$0"
             else
-                report_result "$cmd_id" "failed" "speed_monitor.sh not found"
-                log "ERROR: speed_monitor.sh not found at $SPEED_MONITOR_SCRIPT"
+                local error_msg="${output:0:500}"
+                report_progress "$cmd_id" "running" "Installation failed: $error_msg" "error"
+                report_result "$cmd_id" "failed" "Install failed: $error_msg"
+                log "ERROR: Install failed - $error_msg"
+                rm -f "$install_script"
             fi
             ;;
 
         force_speedtest)
             log "Running force speedtest..."
+            report_progress "$cmd_id" "running" "Starting speed test..."
             if [[ -x "$SPEED_MONITOR_SCRIPT" ]]; then
                 # Run speedtest in background so listener continues
                 ("$SPEED_MONITOR_SCRIPT" >> "$LOG_DIR/launchd_stdout.log" 2>&1) &
+                report_progress "$cmd_id" "running" "Speed test triggered in background" "success"
                 report_result "$cmd_id" "executed" "Speedtest triggered"
                 log "Force speedtest triggered"
             else
+                report_progress "$cmd_id" "running" "speed_monitor.sh not found" "error"
                 report_result "$cmd_id" "failed" "speed_monitor.sh not found"
                 log "ERROR: speed_monitor.sh not found at $SPEED_MONITOR_SCRIPT"
             fi
@@ -87,16 +139,20 @@ execute_command() {
 
         restart_service)
             log "Restarting speed monitor service..."
+            report_progress "$cmd_id" "running" "Stopping speed monitor service..."
             # Unload and reload the main launchd job
             launchctl unload "$HOME/Library/LaunchAgents/com.speedmonitor.plist" 2>/dev/null || true
             sleep 1
+            report_progress "$cmd_id" "running" "Starting speed monitor service..."
             launchctl load "$HOME/Library/LaunchAgents/com.speedmonitor.plist" 2>/dev/null || true
+            report_progress "$cmd_id" "running" "Service restarted successfully" "success"
             report_result "$cmd_id" "executed" "Service restarted"
             log "Service restart completed"
             ;;
 
         collect_diagnostics)
             log "Collecting diagnostics..."
+            report_progress "$cmd_id" "running" "Gathering system information..."
             local diag_file="$LOG_DIR/diagnostics_$(date +%Y%m%d_%H%M%S).txt"
             {
                 echo "=== Speed Monitor Diagnostics ==="
@@ -122,6 +178,7 @@ execute_command() {
                 ps aux | grep -i speed
             } > "$diag_file" 2>&1
 
+            report_progress "$cmd_id" "running" "Diagnostics collected and saved" "success"
             report_result "$cmd_id" "executed" "Diagnostics collected: $diag_file"
             log "Diagnostics saved to $diag_file"
             ;;

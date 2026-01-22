@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Command Logs - Speed Monitor</title>
+    <style>
+        :root {
+            --background: #0a0a0a;
+            --background-subtle: #141414;
+            --foreground: #fafafa;
+            --muted-foreground: #a1a1aa;
+            --border: #27272a;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --destructive: #ef4444;
+            --info: #3b82f6;
+            --radius: 8px;
+            --radius-sm: 6px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background: var(--background-subtle);
+            border: 1px solid var(--border);
+            color: var(--foreground);
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.15s ease;
+        }
+
+        .btn:hover {
+            background: var(--border);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .filters {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+            padding: 16px;
+            background: var(--background-subtle);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-size: 0.75rem;
+            color: var(--muted-foreground);
+            text-transform: uppercase;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            background: var(--background);
+            border: 1px solid var(--border);
+            color: var(--foreground);
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+            min-width: 140px;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .logs-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .log-card {
+            background: var(--background-subtle);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .log-card-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .log-card-header:hover {
+            background: var(--background);
+        }
+
+        .log-card-header .cmd-type {
+            font-weight: 600;
+            min-width: 140px;
+        }
+
+        .log-card-header .cmd-device {
+            flex: 1;
+            color: var(--muted-foreground);
+            font-size: 0.875rem;
+        }
+
+        .log-card-header .cmd-time {
+            color: var(--muted-foreground);
+            font-size: 0.8125rem;
+        }
+
+        .log-card-header .expand-icon {
+            color: var(--muted-foreground);
+            transition: transform 0.2s ease;
+        }
+
+        .log-card.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--destructive);
+        }
+
+        .badge-info {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--info);
+        }
+
+        .badge-secondary {
+            background: rgba(161, 161, 170, 0.15);
+            color: var(--muted-foreground);
+        }
+
+        .log-card-body {
+            display: none;
+            padding: 0 16px 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .log-card.expanded .log-card-body {
+            display: block;
+        }
+
+        .log-timeline {
+            padding: 16px 0;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 12px;
+            padding: 8px 0;
+            font-size: 0.8125rem;
+        }
+
+        .log-entry .time {
+            color: var(--muted-foreground);
+            font-size: 0.75rem;
+            min-width: 70px;
+        }
+
+        .log-entry .icon {
+            width: 16px;
+            text-align: center;
+        }
+
+        .log-entry .icon.success { color: var(--success); }
+        .log-entry .icon.error { color: var(--destructive); }
+        .log-entry .icon.warning { color: var(--warning); }
+        .log-entry .icon.info { color: var(--info); }
+
+        .log-entry .msg {
+            flex: 1;
+        }
+
+        .result {
+            margin-top: 12px;
+            padding: 12px;
+            background: var(--background);
+            border-radius: var(--radius-sm);
+            font-size: 0.8125rem;
+        }
+
+        .result strong {
+            color: var(--muted-foreground);
+            font-weight: 500;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 48px;
+            color: var(--muted-foreground);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 48px;
+            color: var(--muted-foreground);
+        }
+
+        .refresh-indicator {
+            font-size: 0.75rem;
+            color: var(--muted-foreground);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Command Execution Logs</h1>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <span class="refresh-indicator" id="lastRefresh">Auto-refreshing...</span>
+                <a href="/" class="btn">Dashboard</a>
+                <button class="btn btn-primary" onclick="loadLogs()">Refresh</button>
+            </div>
+        </header>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label>Device:</label>
+                <select class="filter-select" id="filterDevice" onchange="loadLogs()">
+                    <option value="">All Devices</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Command:</label>
+                <select class="filter-select" id="filterCommand" onchange="loadLogs()">
+                    <option value="">All Commands</option>
+                    <option value="force_update">force_update</option>
+                    <option value="force_speedtest">force_speedtest</option>
+                    <option value="restart_service">restart_service</option>
+                    <option value="collect_diagnostics">collect_diagnostics</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Status:</label>
+                <select class="filter-select" id="filterStatus" onchange="loadLogs()">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="acknowledged">Acknowledged</option>
+                    <option value="running">Running</option>
+                    <option value="executed">Executed</option>
+                    <option value="failed">Failed</option>
+                    <option value="expired">Expired</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="logs-list" id="logsList">
+            <div class="loading">Loading logs...</div>
+        </div>
+    </div>
+
+    <script>
+        let logsData = [];
+        let refreshInterval = null;
+
+        // Load device list for filter
+        async function loadDevices() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                const select = document.getElementById('filterDevice');
+
+                if (data.devices) {
+                    data.devices.forEach(device => {
+                        const option = document.createElement('option');
+                        option.value = device.device_id;
+                        option.textContent = device.hostname || device.user_email || device.device_id.substring(0, 12);
+                        select.appendChild(option);
+                    });
+                }
+            } catch (err) {
+                console.error('Error loading devices:', err);
+            }
+        }
+
+        // Load logs
+        async function loadLogs() {
+            const device = document.getElementById('filterDevice').value;
+            const command = document.getElementById('filterCommand').value;
+            const status = document.getElementById('filterStatus').value;
+
+            const params = new URLSearchParams();
+            if (device) params.append('device_id', device);
+            if (command) params.append('command', command);
+            if (status) params.append('status', status);
+            params.append('limit', '100');
+
+            try {
+                const response = await fetch(`/api/logs?${params}`);
+                logsData = await response.json();
+                renderLogs();
+                updateRefreshTime();
+            } catch (err) {
+                console.error('Error loading logs:', err);
+                document.getElementById('logsList').innerHTML = '<div class="empty-state">Error loading logs</div>';
+            }
+        }
+
+        function renderLogs() {
+            const container = document.getElementById('logsList');
+
+            if (!logsData || logsData.length === 0) {
+                container.innerHTML = '<div class="empty-state">No command logs found</div>';
+                return;
+            }
+
+            container.innerHTML = logsData.map(cmd => {
+                const logs = cmd.logs || [];
+                const statusClass = getStatusClass(cmd.status);
+
+                return `
+                    <div class="log-card" id="card-${cmd.id}">
+                        <div class="log-card-header" onclick="toggleCard(${cmd.id})">
+                            <span class="cmd-type">${cmd.command}</span>
+                            <span class="cmd-device">${cmd.hostname || cmd.user_email || cmd.device_id.substring(0, 12)}</span>
+                            <span class="badge ${statusClass}">${cmd.status}</span>
+                            <span class="cmd-time">${formatDateTime(cmd.created_at)}</span>
+                            <span class="expand-icon">&#9660;</span>
+                        </div>
+                        <div class="log-card-body">
+                            <div class="log-timeline">
+                                ${logs.length > 0 ? logs.map(log => `
+                                    <div class="log-entry">
+                                        <span class="time">${formatTime(log.timestamp)}</span>
+                                        <span class="icon ${log.level || 'info'}">${getLogIcon(log.level)}</span>
+                                        <span class="msg">${escapeHtml(log.message)}</span>
+                                    </div>
+                                `).join('') : '<em style="color: var(--muted-foreground);">No log entries yet</em>'}
+                            </div>
+                            ${cmd.result ? `
+                                <div class="result">
+                                    <strong>Result:</strong> ${escapeHtml(cmd.result)}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleCard(id) {
+            const card = document.getElementById(`card-${id}`);
+            card.classList.toggle('expanded');
+        }
+
+        function getStatusClass(status) {
+            switch(status) {
+                case 'executed': return 'badge-success';
+                case 'pending': return 'badge-warning';
+                case 'running': return 'badge-info';
+                case 'acknowledged': return 'badge-secondary';
+                case 'failed': case 'expired': return 'badge-danger';
+                default: return 'badge-secondary';
+            }
+        }
+
+        function getLogIcon(level) {
+            switch(level) {
+                case 'success': return '&#10003;';
+                case 'error': return '&#10007;';
+                case 'warning': return '&#9888;';
+                default: return '&#9679;';
+            }
+        }
+
+        function formatDateTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateRefreshTime() {
+            const now = new Date();
+            document.getElementById('lastRefresh').textContent =
+                `Last updated: ${now.toLocaleTimeString()}`;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDevices();
+            loadLogs();
+
+            // Auto-refresh every 10 seconds
+            refreshInterval = setInterval(loadLogs, 10000);
+        });
+    </script>
+</body>
+</html>

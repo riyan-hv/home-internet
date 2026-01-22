@@ -1,9 +1,20 @@
 #!/bin/bash
-# Speed Monitor v3.1.42 - One-line installer for employees
+# Speed Monitor v3.1.43 - One-line installer for employees
 # Install:   bash <(curl -fsSL https://home-internet.onrender.com/install.sh)
+# Update:    bash <(curl -fsSL https://home-internet.onrender.com/install.sh) --force
 # Uninstall: bash <(curl -fsSL https://home-internet.onrender.com/uninstall.sh)
 
 set -e
+
+# Parse command line arguments
+FORCE_MODE=false
+for arg in "$@"; do
+    case $arg in
+        --force|-f)
+            FORCE_MODE=true
+            ;;
+    esac
+done
 
 SERVER_URL="https://home-internet.onrender.com"
 DOWNLOAD_URL="$SERVER_URL"  # Files hosted on Render server
@@ -14,7 +25,10 @@ PLIST_NAME="com.speedmonitor.plist"
 MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
 LISTENER_PLIST_NAME="com.speedmonitor.listener.plist"
 
-echo "=== Speed Monitor v3.1.42 Installer ==="
+echo "=== Speed Monitor v3.1.43 Installer ==="
+if [[ "$FORCE_MODE" == "true" ]]; then
+    echo "  (Running in non-interactive/force mode)"
+fi
 echo ""
 
 # =============================================================================
@@ -99,78 +113,99 @@ mkdir -p "$SCRIPT_DIR" "$BIN_DIR" "$CONFIG_DIR"
 # =============================================================================
 USER_EMAIL=""
 
-# Check if email already exists from previous installation
-if [[ -f "$CONFIG_DIR/user_email" ]]; then
-    EXISTING_EMAIL=$(cat "$CONFIG_DIR/user_email" 2>/dev/null | xargs)
-    if [[ -n "$EXISTING_EMAIL" ]] && [[ "$EXISTING_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-        echo "Found existing email: $EXISTING_EMAIL"
-        echo "Press Enter to keep this email, or type a new one:"
-
-        if [[ -t 0 ]]; then
-            read -p "Email [$EXISTING_EMAIL]: " NEW_EMAIL
-        else
-            read -p "Email [$EXISTING_EMAIL]: " NEW_EMAIL < /dev/tty 2>/dev/null || NEW_EMAIL=""
-        fi
-
-        NEW_EMAIL=$(echo "$NEW_EMAIL" | xargs)
-        if [[ -z "$NEW_EMAIL" ]]; then
-            USER_EMAIL="$EXISTING_EMAIL"
+# In force mode, use existing email without prompting
+if [[ "$FORCE_MODE" == "true" ]]; then
+    if [[ -f "$CONFIG_DIR/user_email" ]]; then
+        USER_EMAIL=$(cat "$CONFIG_DIR/user_email" 2>/dev/null | xargs)
+        if [[ -n "$USER_EMAIL" ]] && [[ "$USER_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
             echo "✓ Using existing email: $USER_EMAIL"
         else
-            USER_EMAIL="$NEW_EMAIL"
+            # Invalid or missing email in force mode - use hostname
+            USER_EMAIL="$(hostname)@unknown.local"
+            echo "⚠ No valid email found, using: $USER_EMAIL"
+        fi
+    else
+        # No email file exists in force mode - use hostname
+        USER_EMAIL="$(hostname)@unknown.local"
+        echo "⚠ No email configured, using: $USER_EMAIL"
+    fi
+    echo "$USER_EMAIL" > "$CONFIG_DIR/user_email"
+    echo ""
+else
+    # Interactive mode - prompt for email
+    # Check if email already exists from previous installation
+    if [[ -f "$CONFIG_DIR/user_email" ]]; then
+        EXISTING_EMAIL=$(cat "$CONFIG_DIR/user_email" 2>/dev/null | xargs)
+        if [[ -n "$EXISTING_EMAIL" ]] && [[ "$EXISTING_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            echo "Found existing email: $EXISTING_EMAIL"
+            echo "Press Enter to keep this email, or type a new one:"
+
+            if [[ -t 0 ]]; then
+                read -p "Email [$EXISTING_EMAIL]: " NEW_EMAIL
+            else
+                read -p "Email [$EXISTING_EMAIL]: " NEW_EMAIL < /dev/tty 2>/dev/null || NEW_EMAIL=""
+            fi
+
+            NEW_EMAIL=$(echo "$NEW_EMAIL" | xargs)
+            if [[ -z "$NEW_EMAIL" ]]; then
+                USER_EMAIL="$EXISTING_EMAIL"
+                echo "✓ Using existing email: $USER_EMAIL"
+            else
+                USER_EMAIL="$NEW_EMAIL"
+            fi
         fi
     fi
-fi
 
-# If no valid email yet, prompt for one
-if [[ -z "$USER_EMAIL" ]]; then
-    echo "Please enter your Hyperverge email address:"
-    echo "(This is required to identify your device in the dashboard)"
+    # If no valid email yet, prompt for one
+    if [[ -z "$USER_EMAIL" ]]; then
+        echo "Please enter your Hyperverge email address:"
+        echo "(This is required to identify your device in the dashboard)"
+        echo ""
+
+        MAX_ATTEMPTS=3
+        ATTEMPT=0
+
+        while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
+            ATTEMPT=$((ATTEMPT + 1))
+
+            if [[ -t 0 ]]; then
+                read -p "Email: " USER_EMAIL
+            else
+                read -p "Email: " USER_EMAIL < /dev/tty 2>/dev/null || {
+                    echo "Error: Cannot read input. Please run the installer differently:"
+                    echo "  curl -fsSL https://home-internet.onrender.com/install.sh -o /tmp/install.sh && bash /tmp/install.sh"
+                    exit 1
+                }
+            fi
+
+            USER_EMAIL=$(echo "$USER_EMAIL" | xargs)
+
+            if [[ -z "$USER_EMAIL" ]]; then
+                echo "❌ Email cannot be empty. Please try again. (Attempt $ATTEMPT/$MAX_ATTEMPTS)"
+                continue
+            fi
+
+            if [[ ! "$USER_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                echo "❌ Invalid email format. Please enter a valid email. (Attempt $ATTEMPT/$MAX_ATTEMPTS)"
+                continue
+            fi
+
+            break
+        done
+    fi
+
+    # Final validation
+    if [[ -z "$USER_EMAIL" ]] || [[ ! "$USER_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        echo ""
+        echo "❌ Error: A valid email address is required to proceed."
+        echo "Please run the installer again and provide your email."
+        exit 1
+    fi
+
+    echo "✓ Email: $USER_EMAIL"
+    echo "$USER_EMAIL" > "$CONFIG_DIR/user_email"
     echo ""
-
-    MAX_ATTEMPTS=3
-    ATTEMPT=0
-
-    while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
-        ATTEMPT=$((ATTEMPT + 1))
-
-        if [[ -t 0 ]]; then
-            read -p "Email: " USER_EMAIL
-        else
-            read -p "Email: " USER_EMAIL < /dev/tty 2>/dev/null || {
-                echo "Error: Cannot read input. Please run the installer differently:"
-                echo "  curl -fsSL https://home-internet.onrender.com/install.sh -o /tmp/install.sh && bash /tmp/install.sh"
-                exit 1
-            }
-        fi
-
-        USER_EMAIL=$(echo "$USER_EMAIL" | xargs)
-
-        if [[ -z "$USER_EMAIL" ]]; then
-            echo "❌ Email cannot be empty. Please try again. (Attempt $ATTEMPT/$MAX_ATTEMPTS)"
-            continue
-        fi
-
-        if [[ ! "$USER_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo "❌ Invalid email format. Please enter a valid email. (Attempt $ATTEMPT/$MAX_ATTEMPTS)"
-            continue
-        fi
-
-        break
-    done
 fi
-
-# Final validation
-if [[ -z "$USER_EMAIL" ]] || [[ ! "$USER_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-    echo ""
-    echo "❌ Error: A valid email address is required to proceed."
-    echo "Please run the installer again and provide your email."
-    exit 1
-fi
-
-echo "✓ Email: $USER_EMAIL"
-echo "$USER_EMAIL" > "$CONFIG_DIR/user_email"
-echo ""
 
 # =============================================================================
 # STEP 4: Install dependencies
@@ -396,7 +431,7 @@ echo " Done!"
 # =============================================================================
 echo ""
 echo "=========================================="
-echo "   Speed Monitor v3.1.42 Installed!"
+echo "   Speed Monitor v3.1.43 Installed!"
 echo "=========================================="
 echo ""
 echo "What's running:"
@@ -406,6 +441,19 @@ echo "  • Results uploaded to: $SERVER_URL"
 echo "  • Menu bar shows live stats"
 echo ""
 echo "Dashboard: $SERVER_URL"
+echo ""
+echo "=========================================="
+echo "   IMPORTANT: Grant Location Permission"
+echo "=========================================="
+echo ""
+echo "To see your actual WiFi network name (e.g., 'HomeNetwork_5G'):"
+echo ""
+echo "  1. Click the SpeedMonitor icon in your menu bar"
+echo "  2. A macOS dialog will ask for Location permission"
+echo "  3. Click 'Allow' to grant access"
+echo ""
+echo "Without Location permission, your WiFi will show as"
+echo "just 'WiFi' instead of the actual network name."
 echo ""
 echo "Commands:"
 echo "  Run test now:  $BIN_DIR/speed_monitor.sh"
