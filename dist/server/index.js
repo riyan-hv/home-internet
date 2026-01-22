@@ -687,7 +687,22 @@ app.get('/api/stats', async (req, res) => {
           device_id,
           vpn_status,
           vpn_name,
-          bssid
+          bssid,
+          ssid,
+          band,
+          channel,
+          rssi_dbm,
+          noise_dbm,
+          snr_db,
+          tx_rate_mbps,
+          mcs_index,
+          roam_count,
+          input_error_rate,
+          output_error_rate,
+          tcp_retransmits,
+          packet_loss_pct,
+          public_ip,
+          local_ip
         FROM speed_results
         WHERE status LIKE 'success%'
         ORDER BY device_id, timestamp_utc DESC
@@ -696,7 +711,22 @@ app.get('/api/stats', async (req, res) => {
         ds.*,
         lt.vpn_status,
         lt.vpn_name,
-        lt.bssid
+        lt.bssid,
+        lt.ssid,
+        lt.band,
+        lt.channel,
+        lt.rssi_dbm,
+        lt.noise_dbm,
+        lt.snr_db,
+        lt.tx_rate_mbps,
+        lt.mcs_index,
+        lt.roam_count,
+        lt.input_error_rate,
+        lt.output_error_rate,
+        lt.tcp_retransmits,
+        lt.packet_loss_pct,
+        lt.public_ip,
+        lt.local_ip
       FROM device_stats ds
       LEFT JOIN latest_tests lt ON ds.device_id = lt.device_id
       ORDER BY ds.last_test DESC
@@ -834,6 +864,33 @@ app.get('/api/stats/vpn', async (req, res) => {
   }
 });
 
+// API: Channel statistics
+app.get('/api/stats/channels', async (req, res) => {
+  try {
+    const channels = await pool.query(`
+      SELECT
+        channel,
+        band,
+        COUNT(*) as test_count,
+        COUNT(DISTINCT device_id) as device_count,
+        ROUND(AVG(download_mbps)::numeric, 2) as avg_download,
+        ROUND(AVG(upload_mbps)::numeric, 2) as avg_upload,
+        ROUND(AVG(rssi_dbm)::numeric, 0) as avg_rssi,
+        ROUND(AVG(latency_ms)::numeric, 2) as avg_latency,
+        ROUND(AVG(jitter_ms)::numeric, 2) as avg_jitter
+      FROM speed_results
+      WHERE status LIKE 'success%' AND channel IS NOT NULL
+      GROUP BY channel, band
+      ORDER BY channel
+    `);
+
+    res.json(channels.rows);
+  } catch (err) {
+    console.error('Error fetching channel stats:', err);
+    res.status(500).json({ error: 'Failed to fetch channel stats' });
+  }
+});
+
 // API: Jitter distribution
 app.get('/api/stats/jitter', async (req, res) => {
   try {
@@ -887,11 +944,43 @@ app.get('/api/stats/jitter', async (req, res) => {
   }
 });
 
-// API: Speed timeline (for charts)
+// API: Speed timeline (for charts) with optional filters
 app.get('/api/stats/timeline', async (req, res) => {
   const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+  const { ssid, band, vpn, device_id, ap } = req.query;
 
   try {
+    // Build WHERE clause with parameterized values
+    let whereConditions = ["status LIKE 'success%'", "timestamp_utc > NOW() - INTERVAL '1 hour' * $1"];
+    let params = [hours];
+    let paramIndex = 2;
+
+    if (ssid && ssid !== 'all') {
+      whereConditions.push(`ssid = $${paramIndex}`);
+      params.push(ssid);
+      paramIndex++;
+    }
+    if (band && band !== 'all') {
+      whereConditions.push(`band = $${paramIndex}`);
+      params.push(band);
+      paramIndex++;
+    }
+    if (vpn && vpn !== 'all') {
+      whereConditions.push(`vpn_status = $${paramIndex}`);
+      params.push(vpn);
+      paramIndex++;
+    }
+    if (device_id && device_id !== 'all') {
+      whereConditions.push(`device_id = $${paramIndex}`);
+      params.push(device_id);
+      paramIndex++;
+    }
+    if (ap && ap !== 'all') {
+      whereConditions.push(`bssid = $${paramIndex}`);
+      params.push(ap);
+      paramIndex++;
+    }
+
     const timeline = await pool.query(`
       SELECT
         to_char(timestamp_utc, 'YYYY-MM-DD HH24:00') as hour,
@@ -902,11 +991,10 @@ app.get('/api/stats/timeline', async (req, res) => {
         COUNT(*) as test_count,
         COUNT(DISTINCT device_id) as device_count
       FROM speed_results
-      WHERE status LIKE 'success%'
-        AND timestamp_utc > NOW() - INTERVAL '1 hour' * $1
+      WHERE ${whereConditions.join(' AND ')}
       GROUP BY hour
       ORDER BY hour
-    `, [hours]);
+    `, params);
 
     res.json(timeline.rows);
   } catch (err) {

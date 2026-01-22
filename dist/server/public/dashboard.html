@@ -1242,6 +1242,37 @@
             margin-bottom: 16px;
         }
 
+        .analytics-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: var(--muted-foreground);
+            cursor: pointer;
+            border-radius: var(--radius);
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        .analytics-tab:hover {
+            background: var(--card);
+            color: var(--foreground);
+        }
+
+        .analytics-tab.active {
+            background: var(--card);
+            color: var(--foreground);
+            border: 1px solid var(--border);
+        }
+
+        .analytics-tab-content {
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         @media (max-width: 1200px) {
             .analytics-grid {
                 grid-template-columns: 1fr 1fr;
@@ -1274,7 +1305,7 @@
                     <span>💻</span> Devices
                     <span class="nav-item-badge" id="warningCount">0</span>
                 </div>
-                <div class="nav-item" onclick="showView('commands')">
+                <div class="nav-item" id="commandsNavItem" onclick="showView('commands')" style="display: none;">
                     <span>⚡</span> Commands
                     <span class="nav-item-badge" id="pendingCommandsCount" style="display:none">0</span>
                 </div>
@@ -1367,6 +1398,21 @@
                     Reset Filters
                 </button>
             </div>
+
+            <!-- Admin Section -->
+            <div class="admin-section" style="margin-top: auto; padding: 16px; border-top: 1px solid var(--border);">
+                <div id="adminLoginSection">
+                    <button class="btn btn-secondary" style="width: 100%;" onclick="showAdminLogin()">
+                        🔐 Admin Login
+                    </button>
+                </div>
+                <div id="adminLoggedInSection" style="display: none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                        <span class="admin-badge" style="background: var(--success-muted); color: var(--success); padding: 4px 8px; border-radius: 4px; font-size: 12px;">👤 Admin</span>
+                        <button class="btn btn-sm" style="padding: 4px 8px; font-size: 12px;" onclick="adminLogout()">Logout</button>
+                    </div>
+                </div>
+            </div>
         </aside>
 
         <!-- Main Content -->
@@ -1382,7 +1428,7 @@
                     <button class="btn btn-secondary" onclick="refreshData()">
                         <span id="refreshIcon">🔄</span> Refresh
                     </button>
-                    <button class="btn btn-primary" onclick="openBulkCommandModal()">
+                    <button class="btn btn-primary" id="sendCommandBtn" onclick="openBulkCommandModal()" style="display: none;">
                         ⚡ Send Command
                     </button>
                 </div>
@@ -1438,6 +1484,30 @@
                             <span id="chartToggleIcon">▼</span> <span id="chartToggleText">Hide</span>
                         </button>
                     </div>
+                </div>
+                <!-- Chart Filters -->
+                <div class="chart-filters" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; padding: 8px; background: var(--background-subtle); border-radius: var(--radius);">
+                    <select class="filter-select" id="chartSsidFilter" style="width: 140px; font-size: 0.75rem;" onchange="loadMainChart()">
+                        <option value="all">All SSIDs</option>
+                    </select>
+                    <select class="filter-select" id="chartApFilter" style="width: 140px; font-size: 0.75rem;" onchange="loadMainChart()">
+                        <option value="all">All APs</option>
+                    </select>
+                    <select class="filter-select" id="chartBandFilter" style="width: 100px; font-size: 0.75rem;" onchange="loadMainChart()">
+                        <option value="all">All Bands</option>
+                        <option value="5GHz">5GHz</option>
+                        <option value="2.4GHz">2.4GHz</option>
+                        <option value="6GHz">6GHz</option>
+                    </select>
+                    <select class="filter-select" id="chartVpnFilter" style="width: 110px; font-size: 0.75rem;" onchange="loadMainChart()">
+                        <option value="all">All VPN</option>
+                        <option value="connected">VPN On</option>
+                        <option value="disconnected">VPN Off</option>
+                    </select>
+                    <select class="filter-select" id="chartDeviceFilter" style="width: 150px; font-size: 0.75rem;" onchange="loadMainChart()">
+                        <option value="all">All Devices</option>
+                    </select>
+                    <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;" onclick="resetChartFilters()">Reset</button>
                 </div>
                 <div class="chart-container" id="mainChartContainer" style="height: 300px;">
                     <canvas id="mainSpeedChart"></canvas>
@@ -1557,38 +1627,172 @@
                     </div>
                 </div>
 
-                <div class="analytics-grid">
-                    <div class="analytics-card">
-                        <div class="analytics-card-title">Speed Trends</div>
-                        <div style="height: 250px;">
-                            <canvas id="trendChart"></canvas>
+                <!-- Analytics Tabs -->
+                <div class="analytics-tabs" style="display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+                    <button class="analytics-tab active" data-tab="overview" onclick="switchAnalyticsTab('overview')">📊 Overview</button>
+                    <button class="analytics-tab" data-tab="ssid" onclick="switchAnalyticsTab('ssid')">📶 By SSID</button>
+                    <button class="analytics-tab" data-tab="ap" onclick="switchAnalyticsTab('ap')">📡 By Access Point</button>
+                    <button class="analytics-tab" data-tab="channel" onclick="switchAnalyticsTab('channel')">📻 By Channel</button>
+                    <button class="analytics-tab" data-tab="vpn" onclick="switchAnalyticsTab('vpn')">🔒 VPN Analysis</button>
+                </div>
+
+                <!-- Overview Tab -->
+                <div id="analyticsTabOverview" class="analytics-tab-content">
+                    <div class="analytics-grid">
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Speed Trends</div>
+                            <div style="height: 250px;">
+                                <canvas id="trendChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">WiFi Band Distribution</div>
+                            <div style="height: 250px;">
+                                <canvas id="bandChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">VPN Usage</div>
+                            <div style="height: 250px;">
+                                <canvas id="vpnChart"></canvas>
+                            </div>
                         </div>
                     </div>
-                    <div class="analytics-card">
-                        <div class="analytics-card-title">WiFi Band Distribution</div>
-                        <div style="height: 250px;">
-                            <canvas id="bandChart"></canvas>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Top Networks (by Speed)</div>
+                            <div id="topAPsTable" style="max-height: 300px; overflow-y: auto;"></div>
                         </div>
-                    </div>
-                    <div class="analytics-card">
-                        <div class="analytics-card-title">VPN Usage</div>
-                        <div style="height: 250px;">
-                            <canvas id="vpnChart"></canvas>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Problem Devices</div>
+                            <div id="problemDevicesTable" style="max-height: 300px; overflow-y: auto;"></div>
                         </div>
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div class="analytics-card">
-                        <div class="analytics-card-title">Top Access Points (by Speed)</div>
-                        <div id="topAPsTable" style="max-height: 300px; overflow-y: auto;">
-                            <!-- Populated by JS -->
+                <!-- SSID Analysis Tab -->
+                <div id="analyticsTabSsid" class="analytics-tab-content" style="display: none;">
+                    <div class="analytics-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Speed by SSID</div>
+                            <div style="height: 300px;">
+                                <canvas id="ssidSpeedChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Device Distribution by SSID</div>
+                            <div style="height: 300px;">
+                                <canvas id="ssidDeviceChart"></canvas>
+                            </div>
                         </div>
                     </div>
-                    <div class="analytics-card">
-                        <div class="analytics-card-title">Problem Devices</div>
-                        <div id="problemDevicesTable" style="max-height: 300px; overflow-y: auto;">
-                            <!-- Populated by JS -->
+                    <div class="analytics-card" style="margin-top: 16px;">
+                        <div class="analytics-card-title">SSID Performance Details</div>
+                        <div id="ssidAnalyticsTable" style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- AP Analysis Tab -->
+                <div id="analyticsTabAp" class="analytics-tab-content" style="display: none;">
+                    <div class="analytics-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Speed by Access Point</div>
+                            <div style="height: 300px;">
+                                <canvas id="apSpeedChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Signal Strength by AP</div>
+                            <div style="height: 300px;">
+                                <canvas id="apSignalChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analytics-card" style="margin-top: 16px;">
+                        <div class="analytics-card-title">Access Point Performance Details</div>
+                        <div id="apAnalyticsTable" style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Channel Analysis Tab -->
+                <div id="analyticsTabChannel" class="analytics-tab-content" style="display: none;">
+                    <div class="analytics-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Speed by Channel</div>
+                            <div style="height: 300px;">
+                                <canvas id="channelSpeedChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Channel Congestion (Devices)</div>
+                            <div style="height: 300px;">
+                                <canvas id="channelCongestionChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analytics-card" style="margin-top: 16px;">
+                        <div class="analytics-card-title">Channel Performance Details</div>
+                        <div id="channelAnalyticsTable" style="max-height: 400px; overflow-y: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- VPN Analysis Tab -->
+                <div id="analyticsTabVpn" class="analytics-tab-content" style="display: none;">
+                    <div class="analytics-grid" style="grid-template-columns: 1fr 1fr;">
+                        <div class="analytics-card vpn-comparison-card" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), transparent);">
+                            <div class="analytics-card-title">🔓 Without VPN</div>
+                            <div id="vpnOffStats" style="padding: 16px;">
+                                <div style="font-size: 2rem; font-weight: 600; color: var(--success);" id="vpnOffDownload">-- Mbps</div>
+                                <div style="color: var(--muted-foreground); margin-bottom: 12px;">Average Download</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div><span style="color: var(--muted-foreground);">Upload:</span> <span id="vpnOffUpload">--</span> Mbps</div>
+                                    <div><span style="color: var(--muted-foreground);">Latency:</span> <span id="vpnOffLatency">--</span> ms</div>
+                                    <div><span style="color: var(--muted-foreground);">Jitter:</span> <span id="vpnOffJitter">--</span> ms</div>
+                                    <div><span style="color: var(--muted-foreground);">Tests:</span> <span id="vpnOffTests">--</span></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="analytics-card vpn-comparison-card" style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), transparent);">
+                            <div class="analytics-card-title">🔒 With VPN (Zscaler)</div>
+                            <div id="vpnOnStats" style="padding: 16px;">
+                                <div style="font-size: 2rem; font-weight: 600; color: var(--purple);" id="vpnOnDownload">-- Mbps</div>
+                                <div style="color: var(--muted-foreground); margin-bottom: 12px;">Average Download</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div><span style="color: var(--muted-foreground);">Upload:</span> <span id="vpnOnUpload">--</span> Mbps</div>
+                                    <div><span style="color: var(--muted-foreground);">Latency:</span> <span id="vpnOnLatency">--</span> ms</div>
+                                    <div><span style="color: var(--muted-foreground);">Jitter:</span> <span id="vpnOnJitter">--</span> ms</div>
+                                    <div><span style="color: var(--muted-foreground);">Tests:</span> <span id="vpnOnTests">--</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analytics-card" style="margin-top: 16px;">
+                        <div class="analytics-card-title">VPN Impact Analysis</div>
+                        <div id="vpnImpactAnalysis" style="padding: 16px; display: flex; gap: 24px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <div style="color: var(--muted-foreground); font-size: 0.875rem;">Download Impact</div>
+                                <div style="font-size: 1.5rem; font-weight: 600;" id="vpnDownloadImpact">--</div>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <div style="color: var(--muted-foreground); font-size: 0.875rem;">Upload Impact</div>
+                                <div style="font-size: 1.5rem; font-weight: 600;" id="vpnUploadImpact">--</div>
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <div style="color: var(--muted-foreground); font-size: 0.875rem;">Latency Impact</div>
+                                <div style="font-size: 1.5rem; font-weight: 600;" id="vpnLatencyImpact">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analytics-grid" style="grid-template-columns: 1fr 1fr; margin-top: 16px;">
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">Speed Comparison Chart</div>
+                            <div style="height: 250px;">
+                                <canvas id="vpnComparisonChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="analytics-card-title">VPN Provider Distribution</div>
+                            <div id="vpnProviderTable" style="max-height: 250px; overflow-y: auto;"></div>
                         </div>
                     </div>
                 </div>
@@ -1959,13 +2163,28 @@
             const loginRequired = document.getElementById('commandLoginRequired');
             const deviceCommandBtns = document.querySelectorAll('.slide-over-footer .btn-secondary');
 
+            // Sidebar admin section elements
+            const adminLoginSection = document.getElementById('adminLoginSection');
+            const adminLoggedInSection = document.getElementById('adminLoggedInSection');
+            const commandsNavItem = document.getElementById('commandsNavItem');
+            const sendCommandBtn = document.getElementById('sendCommandBtn');
+
             if (isAuthenticated) {
-                loginBtn.style.display = 'none';
-                logoutBtn.style.display = 'block';
-                adminStatus.style.display = 'inline';
-                adminStatus.textContent = `Logged in as ${adminUsername}`;
-                commandButtons.style.display = 'flex';
-                loginRequired.style.display = 'none';
+                if (loginBtn) loginBtn.style.display = 'none';
+                if (logoutBtn) logoutBtn.style.display = 'block';
+                if (adminStatus) {
+                    adminStatus.style.display = 'inline';
+                    adminStatus.textContent = `Logged in as ${adminUsername}`;
+                }
+                if (commandButtons) commandButtons.style.display = 'flex';
+                if (loginRequired) loginRequired.style.display = 'none';
+
+                // Sidebar admin section
+                if (adminLoginSection) adminLoginSection.style.display = 'none';
+                if (adminLoggedInSection) adminLoggedInSection.style.display = 'block';
+                if (commandsNavItem) commandsNavItem.style.display = 'flex';
+                if (sendCommandBtn) sendCommandBtn.style.display = 'inline-flex';
+
                 // Enable device detail command buttons
                 deviceCommandBtns.forEach(btn => {
                     if (btn.textContent.includes('Update') || btn.textContent.includes('Speedtest') || btn.textContent.includes('Diagnostics')) {
@@ -1974,11 +2193,18 @@
                     }
                 });
             } else {
-                loginBtn.style.display = 'block';
-                logoutBtn.style.display = 'none';
-                adminStatus.style.display = 'none';
-                commandButtons.style.display = 'none';
-                loginRequired.style.display = 'block';
+                if (loginBtn) loginBtn.style.display = 'block';
+                if (logoutBtn) logoutBtn.style.display = 'none';
+                if (adminStatus) adminStatus.style.display = 'none';
+                if (commandButtons) commandButtons.style.display = 'none';
+                if (loginRequired) loginRequired.style.display = 'block';
+
+                // Sidebar admin section
+                if (adminLoginSection) adminLoginSection.style.display = 'block';
+                if (adminLoggedInSection) adminLoggedInSection.style.display = 'none';
+                if (commandsNavItem) commandsNavItem.style.display = 'none';
+                if (sendCommandBtn) sendCommandBtn.style.display = 'none';
+
                 // Disable device detail command buttons
                 deviceCommandBtns.forEach(btn => {
                     if (btn.textContent.includes('Update') || btn.textContent.includes('Speedtest') || btn.textContent.includes('Diagnostics')) {
@@ -2157,12 +2383,25 @@
         // Main aggregated chart state
         let mainChart = null;
 
-        // Load main chart data
+        // Load main chart data with optional filters
         async function loadMainChart() {
             const hours = parseInt(document.getElementById('chartTimeRange').value) || 24;
+            const ssid = document.getElementById('chartSsidFilter')?.value || 'all';
+            const ap = document.getElementById('chartApFilter')?.value || 'all';
+            const band = document.getElementById('chartBandFilter')?.value || 'all';
+            const vpn = document.getElementById('chartVpnFilter')?.value || 'all';
+            const device_id = document.getElementById('chartDeviceFilter')?.value || 'all';
+
+            // Build query params
+            const params = new URLSearchParams({ hours });
+            if (ssid !== 'all') params.append('ssid', ssid);
+            if (ap !== 'all') params.append('ap', ap);
+            if (band !== 'all') params.append('band', band);
+            if (vpn !== 'all') params.append('vpn', vpn);
+            if (device_id !== 'all') params.append('device_id', device_id);
 
             try {
-                const response = await fetch(`/api/stats/timeline?hours=${hours}`);
+                const response = await fetch(`/api/stats/timeline?${params}`);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);
                 }
@@ -2171,6 +2410,52 @@
             } catch (err) {
                 console.error('Error loading main chart:', err);
             }
+        }
+
+        // Populate chart filter dropdowns
+        function populateChartFilters() {
+            const ssids = [...new Set(devices.map(d => d.ssid).filter(Boolean))].sort();
+            const aps = [...new Set(devices.filter(d => d.bssid && d.ap_name).map(d => ({ bssid: d.bssid, name: d.ap_name })))];
+            const deviceList = devices.map(d => ({ id: d.device_id, name: d.hostname || d.user_email || d.device_id }));
+
+            // Populate SSID filter
+            const ssidSelect = document.getElementById('chartSsidFilter');
+            const currentSsid = ssidSelect?.value;
+            if (ssidSelect) {
+                ssidSelect.innerHTML = '<option value="all">All SSIDs</option>' +
+                    ssids.map(s => `<option value="${s}">${s}</option>`).join('');
+                if (currentSsid && ssids.includes(currentSsid)) ssidSelect.value = currentSsid;
+            }
+
+            // Populate AP filter
+            const apSelect = document.getElementById('chartApFilter');
+            const currentAp = apSelect?.value;
+            if (apSelect) {
+                const uniqueAps = [...new Map(aps.map(a => [a.bssid, a])).values()];
+                apSelect.innerHTML = '<option value="all">All APs</option>' +
+                    uniqueAps.map(a => `<option value="${a.bssid}">${a.name || a.bssid}</option>`).join('');
+                if (currentAp && currentAp !== 'all') apSelect.value = currentAp;
+            }
+
+            // Populate Device filter
+            const deviceSelect = document.getElementById('chartDeviceFilter');
+            const currentDevice = deviceSelect?.value;
+            if (deviceSelect) {
+                deviceSelect.innerHTML = '<option value="all">All Devices</option>' +
+                    deviceList.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+                if (currentDevice && currentDevice !== 'all') deviceSelect.value = currentDevice;
+            }
+        }
+
+        // Reset chart filters
+        function resetChartFilters() {
+            document.getElementById('chartSsidFilter').value = 'all';
+            document.getElementById('chartApFilter').value = 'all';
+            document.getElementById('chartBandFilter').value = 'all';
+            document.getElementById('chartVpnFilter').value = 'all';
+            document.getElementById('chartDeviceFilter').value = 'all';
+            document.getElementById('chartTimeRange').value = '24';
+            loadMainChart();
         }
 
         // Render main chart
@@ -2281,23 +2566,72 @@
         let trendChart = null;
         let bandChart = null;
         let vpnChart = null;
+        let ssidSpeedChart = null;
+        let ssidDeviceChart = null;
+        let apSpeedChart = null;
+        let apSignalChart = null;
+        let channelSpeedChart = null;
+        let channelCongestionChart = null;
+        let vpnComparisonChart = null;
+
+        // Store analytics data globally for tab switching
+        let analyticsData = { trends: [], wifi: {}, vpn: {}, channels: [] };
+
+        // Switch analytics tab
+        function switchAnalyticsTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.analytics-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.tab === tabName);
+            });
+
+            // Hide all tab contents
+            document.querySelectorAll('.analytics-tab-content').forEach(content => {
+                content.style.display = 'none';
+            });
+
+            // Show selected tab content
+            const tabContent = document.getElementById(`analyticsTab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`);
+            if (tabContent) tabContent.style.display = 'block';
+
+            // Render tab-specific content if data is available
+            if (tabName === 'ssid' && analyticsData.wifi.bySSID) {
+                renderSSIDAnalytics(analyticsData.wifi);
+            } else if (tabName === 'ap' && analyticsData.wifi.byAccessPoint) {
+                renderAPAnalytics(analyticsData.wifi);
+            } else if (tabName === 'channel' && analyticsData.channels.length) {
+                renderChannelAnalytics(analyticsData.channels);
+            } else if (tabName === 'vpn' && analyticsData.vpn.comparison) {
+                renderVPNAnalysis(analyticsData.vpn);
+            }
+        }
 
         // Load analytics data
         async function loadAnalytics() {
             const days = parseInt(document.getElementById('analyticsTimeRange').value) || 30;
 
             try {
-                const [trends, wifi, vpn] = await Promise.all([
+                const [trends, wifi, vpn, channels] = await Promise.all([
                     fetch(`/api/stats/trends?days=${days}`).then(r => r.json()),
                     fetch('/api/stats/wifi').then(r => r.json()),
-                    fetch('/api/stats/vpn').then(r => r.json())
+                    fetch('/api/stats/vpn').then(r => r.json()),
+                    fetch('/api/stats/channels').then(r => r.json()).catch(() => [])
                 ]);
 
+                // Store data globally
+                analyticsData = { trends, wifi, vpn, channels };
+
+                // Render overview tab (always visible first)
                 renderTrendChart(trends);
                 renderBandChart(wifi);
                 renderVPNChart(vpn);
                 renderTopAPs(wifi);
                 renderProblemDevices();
+
+                // Re-render current tab if not overview
+                const activeTab = document.querySelector('.analytics-tab.active');
+                if (activeTab && activeTab.dataset.tab !== 'overview') {
+                    switchAnalyticsTab(activeTab.dataset.tab);
+                }
             } catch (err) {
                 console.error('Error loading analytics:', err);
                 showToast('Failed to load analytics', 'error');
@@ -2364,15 +2698,19 @@
 
             if (bandChart) bandChart.destroy();
 
-            const bandData = data.byBand || [];
-            if (bandData.length === 0) return;
+            // Server returns bandDistribution, not byBand
+            const bandData = data.bandDistribution || [];
+            if (bandData.length === 0) {
+                document.getElementById('bandChart').parentElement.innerHTML = '<p style="color: var(--muted-foreground); text-align: center; padding: 40px;">No band data available</p>';
+                return;
+            }
 
             bandChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: bandData.map(b => b.band || 'Unknown'),
                     datasets: [{
-                        data: bandData.map(b => b.test_count),
+                        data: bandData.map(b => b.count),  // Server returns count, not test_count
                         backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#f43f5e'],
                         borderWidth: 0
                     }]
@@ -2396,13 +2734,22 @@
 
             if (vpnChart) vpnChart.destroy();
 
-            const connected = data.connected || 0;
-            const disconnected = data.disconnected || 0;
+            // Server returns comparison array with {mode: 'VPN On/Off', test_count, ...}
+            const comparison = data.comparison || [];
+            const vpnOn = comparison.find(c => c.mode === 'VPN On');
+            const vpnOff = comparison.find(c => c.mode === 'VPN Off');
+            const connected = vpnOn?.test_count || 0;
+            const disconnected = vpnOff?.test_count || 0;
+
+            if (connected === 0 && disconnected === 0) {
+                document.getElementById('vpnChart').parentElement.innerHTML = '<p style="color: var(--muted-foreground); text-align: center; padding: 40px;">No VPN data available</p>';
+                return;
+            }
 
             vpnChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Connected', 'Disconnected'],
+                    labels: ['VPN On', 'VPN Off'],
                     datasets: [{
                         data: [connected, disconnected],
                         backgroundColor: ['#10b981', '#f43f5e'],
@@ -2420,6 +2767,289 @@
                     }
                 }
             });
+        }
+
+        // Render SSID Analytics
+        function renderSSIDAnalytics(data) {
+            const ssidData = data.bySSID || [];
+            if (ssidData.length === 0) return;
+
+            // SSID Speed Chart
+            const speedCtx = document.getElementById('ssidSpeedChart')?.getContext('2d');
+            if (speedCtx) {
+                if (ssidSpeedChart) ssidSpeedChart.destroy();
+                const sorted = [...ssidData].sort((a, b) => (b.avg_download || 0) - (a.avg_download || 0)).slice(0, 10);
+                ssidSpeedChart = new Chart(speedCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: sorted.map(s => s.ssid || 'Unknown'),
+                        datasets: [{
+                            label: 'Download (Mbps)',
+                            data: sorted.map(s => parseFloat(s.avg_download) || 0),
+                            backgroundColor: '#10b981'
+                        }, {
+                            label: 'Upload (Mbps)',
+                            data: sorted.map(s => parseFloat(s.avg_upload) || 0),
+                            backgroundColor: '#6366f1'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#a1a1aa' } } },
+                        scales: {
+                            x: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            }
+
+            // SSID Device Distribution Chart
+            const deviceCtx = document.getElementById('ssidDeviceChart')?.getContext('2d');
+            if (deviceCtx) {
+                if (ssidDeviceChart) ssidDeviceChart.destroy();
+                const topSSIDs = [...ssidData].sort((a, b) => (b.device_count || 0) - (a.device_count || 0)).slice(0, 8);
+                ssidDeviceChart = new Chart(deviceCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: topSSIDs.map(s => s.ssid || 'Unknown'),
+                        datasets: [{ data: topSSIDs.map(s => s.device_count || 0), backgroundColor: ['#10b981', '#6366f1', '#f59e0b', '#f43f5e', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#a1a1aa' } } } }
+                });
+            }
+
+            // SSID Table
+            const table = document.getElementById('ssidAnalyticsTable');
+            if (table) {
+                const sorted = [...ssidData].sort((a, b) => (b.test_count || 0) - (a.test_count || 0));
+                table.innerHTML = `<table class="device-table" style="width:100%"><thead><tr>
+                    <th>SSID</th><th>Tests</th><th>Devices</th><th>APs</th><th>↓ Mbps</th><th>↑ Mbps</th><th>RSSI</th>
+                </tr></thead><tbody>${sorted.map(s => `<tr>
+                    <td>${s.ssid || 'Unknown'}</td><td>${s.test_count || 0}</td><td>${s.device_count || 0}</td><td>${s.ap_count || 0}</td>
+                    <td style="color:var(--success)">${s.avg_download || 0}</td><td style="color:var(--info)">${s.avg_upload || 0}</td>
+                    <td>${s.avg_rssi || '-'} dBm</td>
+                </tr>`).join('')}</tbody></table>`;
+            }
+        }
+
+        // Render AP Analytics
+        function renderAPAnalytics(data) {
+            const apData = data.byAccessPoint || [];
+            if (apData.length === 0) return;
+
+            // AP Speed Chart
+            const speedCtx = document.getElementById('apSpeedChart')?.getContext('2d');
+            if (speedCtx) {
+                if (apSpeedChart) apSpeedChart.destroy();
+                const sorted = [...apData].sort((a, b) => (b.avg_download || 0) - (a.avg_download || 0)).slice(0, 10);
+                apSpeedChart = new Chart(speedCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: sorted.map(a => a.ap_name || a.bssid?.slice(-8) || 'Unknown'),
+                        datasets: [{
+                            label: 'Download (Mbps)',
+                            data: sorted.map(a => parseFloat(a.avg_download) || 0),
+                            backgroundColor: '#10b981'
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            }
+
+            // AP Signal Chart
+            const signalCtx = document.getElementById('apSignalChart')?.getContext('2d');
+            if (signalCtx) {
+                if (apSignalChart) apSignalChart.destroy();
+                const sorted = [...apData].filter(a => a.avg_rssi).sort((a, b) => (b.avg_rssi || -100) - (a.avg_rssi || -100)).slice(0, 10);
+                apSignalChart = new Chart(signalCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: sorted.map(a => a.ap_name || a.bssid?.slice(-8) || 'Unknown'),
+                        datasets: [{
+                            label: 'Signal (dBm)',
+                            data: sorted.map(a => a.avg_rssi || 0),
+                            backgroundColor: sorted.map(a => (a.avg_rssi || -100) > -50 ? '#10b981' : (a.avg_rssi || -100) > -70 ? '#f59e0b' : '#f43f5e')
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { min: -100, max: -20, ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            }
+
+            // AP Table
+            const table = document.getElementById('apAnalyticsTable');
+            if (table) {
+                const sorted = [...apData].sort((a, b) => (b.test_count || 0) - (a.test_count || 0));
+                table.innerHTML = `<table class="device-table" style="width:100%"><thead><tr>
+                    <th>AP Name</th><th>SSID</th><th>Band</th><th>Ch</th><th>Tests</th><th>↓ Mbps</th><th>RSSI</th>
+                </tr></thead><tbody>${sorted.map(a => `<tr>
+                    <td>${a.ap_name || a.bssid?.slice(-8) || 'Unknown'}</td><td>${a.ssid || '-'}</td><td>${a.band || '-'}</td><td>${a.channel || '-'}</td>
+                    <td>${a.test_count || 0}</td><td style="color:var(--success)">${a.avg_download || 0}</td>
+                    <td style="color:${(a.avg_rssi || -100) > -50 ? 'var(--success)' : (a.avg_rssi || -100) > -70 ? 'var(--warning)' : 'var(--destructive)'}">${a.avg_rssi || '-'} dBm</td>
+                </tr>`).join('')}</tbody></table>`;
+            }
+        }
+
+        // Render Channel Analytics
+        function renderChannelAnalytics(channelData) {
+            if (!channelData || channelData.length === 0) return;
+
+            // Channel Speed Chart
+            const speedCtx = document.getElementById('channelSpeedChart')?.getContext('2d');
+            if (speedCtx) {
+                if (channelSpeedChart) channelSpeedChart.destroy();
+                const sorted = [...channelData].sort((a, b) => (a.channel || 0) - (b.channel || 0));
+                channelSpeedChart = new Chart(speedCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: sorted.map(c => `Ch ${c.channel} (${c.band || '?'})`),
+                        datasets: [{
+                            label: 'Download (Mbps)',
+                            data: sorted.map(c => parseFloat(c.avg_download) || 0),
+                            backgroundColor: sorted.map(c => c.band === '5GHz' ? '#6366f1' : c.band === '2.4GHz' ? '#10b981' : '#8b5cf6')
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#a1a1aa', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            }
+
+            // Channel Congestion Chart
+            const congestionCtx = document.getElementById('channelCongestionChart')?.getContext('2d');
+            if (congestionCtx) {
+                if (channelCongestionChart) channelCongestionChart.destroy();
+                const sorted = [...channelData].sort((a, b) => (b.device_count || 0) - (a.device_count || 0)).slice(0, 15);
+                channelCongestionChart = new Chart(congestionCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: sorted.map(c => `Ch ${c.channel}`),
+                        datasets: [{
+                            label: 'Devices',
+                            data: sorted.map(c => c.device_count || 0),
+                            backgroundColor: '#f59e0b'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            }
+
+            // Channel Table
+            const table = document.getElementById('channelAnalyticsTable');
+            if (table) {
+                const sorted = [...channelData].sort((a, b) => (a.channel || 0) - (b.channel || 0));
+                table.innerHTML = `<table class="device-table" style="width:100%"><thead><tr>
+                    <th>Channel</th><th>Band</th><th>Tests</th><th>Devices</th><th>↓ Mbps</th><th>↑ Mbps</th><th>Latency</th><th>RSSI</th>
+                </tr></thead><tbody>${sorted.map(c => `<tr>
+                    <td>Ch ${c.channel || '-'}</td><td>${c.band || '-'}</td><td>${c.test_count || 0}</td><td>${c.device_count || 0}</td>
+                    <td style="color:var(--success)">${c.avg_download || 0}</td><td style="color:var(--info)">${c.avg_upload || 0}</td>
+                    <td>${c.avg_latency || '-'} ms</td><td>${c.avg_rssi || '-'} dBm</td>
+                </tr>`).join('')}</tbody></table>`;
+            }
+        }
+
+        // Render VPN Analysis
+        function renderVPNAnalysis(data) {
+            const comparison = data.comparison || [];
+            const distribution = data.distribution || [];
+            const vpnOn = comparison.find(c => c.mode === 'VPN On') || {};
+            const vpnOff = comparison.find(c => c.mode === 'VPN Off') || {};
+
+            // Update VPN Off stats
+            document.getElementById('vpnOffDownload').textContent = `${vpnOff.avg_download || '--'} Mbps`;
+            document.getElementById('vpnOffUpload').textContent = vpnOff.avg_upload || '--';
+            document.getElementById('vpnOffLatency').textContent = vpnOff.avg_latency || '--';
+            document.getElementById('vpnOffJitter').textContent = vpnOff.avg_jitter || '--';
+            document.getElementById('vpnOffTests').textContent = vpnOff.test_count || '--';
+
+            // Update VPN On stats
+            document.getElementById('vpnOnDownload').textContent = `${vpnOn.avg_download || '--'} Mbps`;
+            document.getElementById('vpnOnUpload').textContent = vpnOn.avg_upload || '--';
+            document.getElementById('vpnOnLatency').textContent = vpnOn.avg_latency || '--';
+            document.getElementById('vpnOnJitter').textContent = vpnOn.avg_jitter || '--';
+            document.getElementById('vpnOnTests').textContent = vpnOn.test_count || '--';
+
+            // Calculate impact
+            if (vpnOff.avg_download && vpnOn.avg_download) {
+                const downloadImpact = ((vpnOn.avg_download - vpnOff.avg_download) / vpnOff.avg_download * 100).toFixed(1);
+                const uploadImpact = vpnOff.avg_upload ? ((vpnOn.avg_upload - vpnOff.avg_upload) / vpnOff.avg_upload * 100).toFixed(1) : '--';
+                const latencyImpact = vpnOff.avg_latency ? ((vpnOn.avg_latency - vpnOff.avg_latency) / vpnOff.avg_latency * 100).toFixed(1) : '--';
+
+                document.getElementById('vpnDownloadImpact').textContent = `${downloadImpact > 0 ? '+' : ''}${downloadImpact}%`;
+                document.getElementById('vpnDownloadImpact').style.color = downloadImpact < 0 ? 'var(--destructive)' : 'var(--success)';
+                document.getElementById('vpnUploadImpact').textContent = uploadImpact !== '--' ? `${uploadImpact > 0 ? '+' : ''}${uploadImpact}%` : '--';
+                document.getElementById('vpnUploadImpact').style.color = uploadImpact < 0 ? 'var(--destructive)' : 'var(--success)';
+                document.getElementById('vpnLatencyImpact').textContent = latencyImpact !== '--' ? `${latencyImpact > 0 ? '+' : ''}${latencyImpact}%` : '--';
+                document.getElementById('vpnLatencyImpact').style.color = latencyImpact > 0 ? 'var(--destructive)' : 'var(--success)';
+            }
+
+            // VPN Comparison Chart
+            const chartCtx = document.getElementById('vpnComparisonChart')?.getContext('2d');
+            if (chartCtx) {
+                if (vpnComparisonChart) vpnComparisonChart.destroy();
+                vpnComparisonChart = new Chart(chartCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Download', 'Upload', 'Latency', 'Jitter'],
+                        datasets: [{
+                            label: 'VPN Off',
+                            data: [vpnOff.avg_download || 0, vpnOff.avg_upload || 0, vpnOff.avg_latency || 0, vpnOff.avg_jitter || 0],
+                            backgroundColor: '#10b981'
+                        }, {
+                            label: 'VPN On',
+                            data: [vpnOn.avg_download || 0, vpnOn.avg_upload || 0, vpnOn.avg_latency || 0, vpnOn.avg_jitter || 0],
+                            backgroundColor: '#8b5cf6'
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#a1a1aa' } } },
+                        scales: {
+                            x: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y: { ticks: { color: '#a1a1aa' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            }
+
+            // VPN Provider Table
+            const table = document.getElementById('vpnProviderTable');
+            if (table) {
+                const vpnProviders = distribution.filter(d => d.vpn_status === 'connected');
+                table.innerHTML = vpnProviders.length ? `<table class="device-table" style="width:100%"><thead><tr>
+                    <th>Provider</th><th>Tests</th><th>↓ Mbps</th><th>↑ Mbps</th><th>Latency</th>
+                </tr></thead><tbody>${vpnProviders.map(p => `<tr>
+                    <td>${p.vpn_name || 'Unknown'}</td><td>${p.count || 0}</td>
+                    <td style="color:var(--success)">${p.avg_download || 0}</td><td style="color:var(--info)">${p.avg_upload || 0}</td>
+                    <td>${p.avg_latency || '-'} ms</td>
+                </tr>`).join('')}</tbody></table>` : '<p style="color: var(--muted-foreground);">No VPN provider data</p>';
+            }
         }
 
         // Render top APs table
@@ -2532,6 +3162,7 @@
 
                 // Populate filter dropdowns
                 populateFilterDropdowns();
+                populateChartFilters();
 
                 // Apply filters
                 filterDevices();
