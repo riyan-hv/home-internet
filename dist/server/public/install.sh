@@ -50,9 +50,33 @@ if [[ -d "/usr/local/speedmonitor/bin" ]]; then
     rm -f /usr/local/speedmonitor/bin/wifi_info 2>/dev/null || true
 fi
 
-# Remove SpeedMonitor.app (may need elevated permissions)
-echo "  Removing SpeedMonitor.app..."
-rm -rf /Applications/SpeedMonitor.app 2>/dev/null || sudo rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+# Remove SpeedMonitor.app from ALL possible locations
+echo "  Removing SpeedMonitor.app from all locations..."
+
+# Common installation locations
+APP_LOCATIONS=(
+    "/Applications/SpeedMonitor.app"
+    "$HOME/Applications/SpeedMonitor.app"
+    "/usr/local/speedmonitor/lib/SpeedMonitor.app"
+)
+
+# Remove from known locations
+for loc in "${APP_LOCATIONS[@]}"; do
+    if [[ -d "$loc" ]]; then
+        echo "    Found at: $loc"
+        rm -rf "$loc" 2>/dev/null || sudo rm -rf "$loc" 2>/dev/null || true
+    fi
+done
+
+# Use Spotlight to find any other instances
+if command -v mdfind &> /dev/null; then
+    while IFS= read -r app_path; do
+        if [[ -d "$app_path" && "$app_path" == *"SpeedMonitor.app" ]]; then
+            echo "    Found at: $app_path"
+            rm -rf "$app_path" 2>/dev/null || sudo rm -rf "$app_path" 2>/dev/null || true
+        fi
+    done < <(mdfind "kMDItemKind == 'Application'" -name "SpeedMonitor" 2>/dev/null)
+fi
 
 # Remove old data files (but preserve email and device_id)
 echo "  Cleaning data directory (preserving identity)..."
