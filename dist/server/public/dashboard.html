@@ -1563,7 +1563,7 @@
                 : '-';
             document.getElementById('avgDownload').textContent = avgDown;
 
-            const vpnCount = activeDevices.filter(d => d.vpn_status === 'connected' || d.vpn_name === 'Zscaler').length;
+            const vpnCount = activeDevices.filter(d => d.vpn_status === 'connected').length;
             document.getElementById('vpnConnected').textContent = vpnCount;
             document.getElementById('vpnPercentage').textContent = activeDevices.length > 0
                 ? `${Math.round(vpnCount / activeDevices.length * 100)}% of active devices`
@@ -1615,7 +1615,7 @@
 
                 // VPN filter
                 if (filters.vpn !== 'all') {
-                    const hasVpn = device.vpn_status === 'connected' || device.vpn_name === 'Zscaler';
+                    const hasVpn = device.vpn_status === 'connected';
                     if (filters.vpn === 'connected' && !hasVpn) return false;
                     if (filters.vpn === 'disconnected' && hasVpn) return false;
                 }
@@ -1747,7 +1747,7 @@
                             </div>
                         </div>
                         <div class="device-tags">
-                            ${(device.vpn_status === 'connected' || device.vpn_name === 'Zscaler')
+                            ${device.vpn_status === 'connected'
                                 ? `<span class="device-tag vpn">🔒 ${device.vpn_name || 'VPN'}</span>`
                                 : '<span class="device-tag no-vpn">⚠️ No VPN</span>'}
                             ${device.app_version
@@ -1802,8 +1802,8 @@
                         <td>${formatLatency(device.avg_latency)}</td>
                         <td>${device.test_count || 0} tests</td>
                         <td>
-                            <span class="badge ${(device.vpn_status === 'connected' || device.vpn_name === 'Zscaler') ? 'badge-success' : 'badge-warning'}">
-                                ${(device.vpn_status === 'connected' || device.vpn_name === 'Zscaler') ? '🔒 ' + (device.vpn_name || 'VPN') : '⚠️ None'}
+                            <span class="badge ${device.vpn_status === 'connected' ? 'badge-success' : 'badge-warning'}">
+                                ${device.vpn_status === 'connected' ? '🔒 ' + (device.vpn_name || 'VPN') : '⚠️ None'}
                             </span>
                         </td>
                         <td>${device.app_version || '-'}</td>
@@ -1873,10 +1873,10 @@
             document.getElementById('detailOS').textContent = device.os_version || '-';
 
             // Speed
-            document.getElementById('detailDownload').textContent = formatSpeed(device.download_mbps) + ' Mbps';
-            document.getElementById('detailUpload').textContent = formatSpeed(device.upload_mbps) + ' Mbps';
-            document.getElementById('detailLatency').textContent = formatLatency(device.latency_ms) + ' ms';
-            document.getElementById('detailJitter').textContent = (parseFloat(device.jitter_ms) || 0).toFixed(1) + ' ms';
+            document.getElementById('detailDownload').textContent = formatSpeed(device.avg_download) + ' Mbps';
+            document.getElementById('detailUpload').textContent = formatSpeed(device.avg_upload) + ' Mbps';
+            document.getElementById('detailLatency').textContent = formatLatency(device.avg_latency) + ' ms';
+            document.getElementById('detailJitter').textContent = (parseFloat(device.avg_jitter) || 0).toFixed(1) + ' ms';
 
             // WiFi
             document.getElementById('detailSSID').textContent = device.ssid || '-';
@@ -1916,7 +1916,7 @@
             loadDeviceSpeedHistory(deviceId);
         }
 
-        // Load device speed history
+        // Load device speed history and populate detail fields
         async function loadDeviceSpeedHistory(deviceId) {
             try {
                 const response = await fetch(`/api/devices/${deviceId}/health`);
@@ -1924,6 +1924,41 @@
 
                 if (data.recent_tests && data.recent_tests.length > 0) {
                     renderSpeedChart(data.recent_tests);
+
+                    // Use most recent test to populate detail fields not in aggregate data
+                    const latest = data.recent_tests[0];
+
+                    // WiFi details from latest test
+                    document.getElementById('detailSSID').textContent = latest.ssid || '-';
+                    document.getElementById('detailBand').textContent = latest.band || '-';
+                    document.getElementById('detailChannel').textContent = latest.channel || '-';
+                    document.getElementById('detailRSSI').textContent = latest.rssi_dbm ? latest.rssi_dbm + ' dBm' : '-';
+                    document.getElementById('detailNoise').textContent = latest.noise_dbm ? latest.noise_dbm + ' dBm' : '-';
+                    document.getElementById('detailSNR').textContent = latest.snr_db ? latest.snr_db + ' dB' : '-';
+                    document.getElementById('detailTXRate').textContent = latest.tx_rate_mbps ? latest.tx_rate_mbps + ' Mbps' : '-';
+                    document.getElementById('detailMCS').textContent = latest.mcs_index >= 0 ? latest.mcs_index : '-';
+                    document.getElementById('detailRoam').textContent = latest.roam_count || '0';
+                    document.getElementById('detailBSSID').textContent = latest.bssid || '-';
+
+                    // VPN & Network from latest test
+                    document.getElementById('detailVPNStatus').innerHTML = latest.vpn_status === 'connected'
+                        ? '<span class="badge badge-success">Connected</span>'
+                        : '<span class="badge badge-warning">Disconnected</span>';
+                    document.getElementById('detailVPNName').textContent = latest.vpn_name && latest.vpn_name !== 'none' ? latest.vpn_name : '-';
+                    document.getElementById('detailPublicIP').textContent = latest.public_ip || '-';
+                    document.getElementById('detailLocalIP').textContent = latest.local_ip || '-';
+
+                    // Errors from latest test
+                    document.getElementById('detailInputErrors').textContent = latest.input_error_rate ? latest.input_error_rate + '%' : '0%';
+                    document.getElementById('detailOutputErrors').textContent = latest.output_error_rate ? latest.output_error_rate + '%' : '0%';
+                    document.getElementById('detailRetransmits').textContent = latest.tcp_retransmits || '0';
+                    document.getElementById('detailPacketLoss').textContent = (latest.packet_loss_pct || '0') + '%';
+
+                    // Update speed from latest test (more accurate than aggregate)
+                    document.getElementById('detailDownload').textContent = formatSpeed(latest.download_mbps) + ' Mbps';
+                    document.getElementById('detailUpload').textContent = formatSpeed(latest.upload_mbps) + ' Mbps';
+                    document.getElementById('detailLatency').textContent = formatLatency(latest.latency_ms) + ' ms';
+                    document.getElementById('detailJitter').textContent = (parseFloat(latest.jitter_ms) || 0).toFixed(1) + ' ms';
                 }
             } catch (err) {
                 console.error('Error loading device history:', err);
