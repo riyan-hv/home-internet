@@ -12,25 +12,26 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         :root {
-            --background: #09090b;
-            --background-subtle: #18181b;
-            --foreground: #fafafa;
-            --card: rgba(24, 24, 27, 0.6);
-            --card-hover: rgba(39, 39, 42, 0.8);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(255, 255, 255, 0.15);
-            --muted: #27272a;
+            /* Improved dark mode colors */
+            --background: #0a0a0f;
+            --background-subtle: #151520;
+            --foreground: #f4f4f5;
+            --card: rgba(30, 30, 45, 0.5);
+            --card-hover: rgba(45, 45, 65, 0.7);
+            --border: rgba(255, 255, 255, 0.1);
+            --border-hover: rgba(255, 255, 255, 0.2);
+            --muted: #1e1e2e;
             --muted-foreground: #a1a1aa;
-            --success: #22c55e;
-            --success-muted: rgba(34, 197, 94, 0.15);
+            --success: #10b981;
+            --success-muted: rgba(16, 185, 129, 0.15);
             --warning: #f59e0b;
             --warning-muted: rgba(245, 158, 11, 0.15);
-            --destructive: #ef4444;
-            --destructive-muted: rgba(239, 68, 68, 0.15);
-            --info: #3b82f6;
-            --info-muted: rgba(59, 130, 246, 0.15);
-            --purple: #a855f7;
-            --purple-muted: rgba(168, 85, 247, 0.15);
+            --destructive: #f43f5e;
+            --destructive-muted: rgba(244, 63, 94, 0.15);
+            --info: #6366f1;
+            --info-muted: rgba(99, 102, 241, 0.15);
+            --purple: #8b5cf6;
+            --purple-muted: rgba(139, 92, 246, 0.15);
             --radius: 12px;
             --radius-sm: 8px;
             --radius-lg: 16px;
@@ -45,6 +46,9 @@
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--background);
+            background-image:
+                radial-gradient(at 20% 80%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+                radial-gradient(at 80% 20%, rgba(139, 92, 246, 0.08) 0px, transparent 50%);
             color: var(--foreground);
             min-height: 100vh;
             line-height: 1.5;
@@ -68,10 +72,68 @@
             position: fixed;
             height: 100vh;
             overflow-y: auto;
+            transition: width 0.3s ease, padding 0.3s ease;
+            z-index: 100;
+        }
+
+        .sidebar.collapsed {
+            width: 64px;
+            padding: 16px 12px;
+        }
+
+        .sidebar.collapsed .sidebar-title,
+        .sidebar.collapsed .nav-section-title,
+        .sidebar.collapsed .nav-item span:not(:first-child),
+        .sidebar.collapsed .nav-item-badge,
+        .sidebar.collapsed .filter-section {
+            display: none;
+        }
+
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+            padding: 12px;
+        }
+
+        .sidebar.collapsed .logo {
+            justify-content: center;
+        }
+
+        .sidebar.collapsed .logo-icon {
+            width: 36px;
+            height: 36px;
         }
 
         .sidebar-header {
             margin-bottom: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar.collapsed .sidebar-header {
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+
+        .sidebar-collapse-btn {
+            background: transparent;
+            border: none;
+            color: var(--muted-foreground);
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: var(--radius-sm);
+            transition: all 0.15s ease;
+            font-size: 0.875rem;
+        }
+
+        .sidebar-collapse-btn:hover {
+            background: var(--muted);
+            color: var(--foreground);
+        }
+
+        .sidebar.collapsed .sidebar-collapse-btn {
+            transform: rotate(180deg);
+            padding: 6px;
         }
 
         .logo {
@@ -208,6 +270,11 @@
             flex: 1;
             margin-left: 280px;
             padding: 24px;
+            transition: margin-left 0.3s ease;
+        }
+
+        .sidebar.collapsed ~ .main-content {
+            margin-left: 64px;
         }
 
         /* Top Bar */
@@ -316,6 +383,7 @@
             border-radius: var(--radius);
             padding: 20px;
             transition: all 0.15s ease;
+            backdrop-filter: blur(12px);
         }
 
         .stat-card:hover {
@@ -420,6 +488,7 @@
             cursor: pointer;
             transition: all 0.2s ease;
             position: relative;
+            backdrop-filter: blur(12px);
         }
 
         .device-card:hover {
@@ -1061,18 +1130,142 @@
         .last-seen.offline {
             color: var(--destructive);
         }
+
+        /* Sort Indicators */
+        .sort-indicator {
+            opacity: 0.5;
+            font-size: 0.75em;
+            margin-left: 2px;
+        }
+
+        .sort-indicator.active {
+            opacity: 1;
+            color: var(--info);
+        }
+
+        .text-warning {
+            color: var(--warning);
+        }
+
+        /* Chart Section */
+        .chart-section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(12px);
+        }
+
+        .chart-container {
+            position: relative;
+            transition: height 0.3s ease, opacity 0.3s ease;
+        }
+
+        .chart-container.collapsed {
+            height: 0 !important;
+            opacity: 0;
+            overflow: hidden;
+            margin: 0;
+        }
+
+        .chart-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        /* Column Dropdown */
+        .dropdown {
+            position: relative;
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: var(--background-subtle);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 8px 0;
+            min-width: 180px;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            color: var(--foreground);
+        }
+
+        .dropdown-item:hover {
+            background: var(--muted);
+        }
+
+        .dropdown-item input[type="checkbox"] {
+            accent-color: var(--info);
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Analytics View */
+        #analyticsView {
+            display: none;
+        }
+
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .analytics-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            backdrop-filter: blur(12px);
+        }
+
+        .analytics-card-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--muted-foreground);
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 1200px) {
+            .analytics-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 
 <body>
     <div class="app-container">
         <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
                     <div class="logo-icon">📡</div>
-                    <span>Speed Monitor</span>
+                    <span class="sidebar-title">Speed Monitor</span>
                 </div>
+                <button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Toggle sidebar">◀</button>
             </div>
 
             <nav class="nav-section">
@@ -1137,6 +1330,27 @@
                         <div class="filter-chip" data-filter="speed" data-value="fast">Fast</div>
                         <div class="filter-chip" data-filter="speed" data-value="slow">Slow</div>
                     </div>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Network (SSID)</label>
+                    <select class="filter-select" id="ssidFilter">
+                        <option value="all">All Networks</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Access Point</label>
+                    <select class="filter-select" id="apFilter">
+                        <option value="all">All APs</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Channel</label>
+                    <select class="filter-select" id="channelFilter">
+                        <option value="all">All Channels</option>
+                    </select>
                 </div>
 
                 <div class="filter-group">
@@ -1210,6 +1424,26 @@
                 </div>
             </div>
 
+            <!-- Aggregated Speed History Chart -->
+            <div class="chart-section" id="mainChartSection">
+                <div class="section-header">
+                    <div class="section-title">Organization Speed History</div>
+                    <div class="chart-controls">
+                        <select class="filter-select" id="chartTimeRange" style="width: 130px;" onchange="loadMainChart()">
+                            <option value="24">Last 24 Hours</option>
+                            <option value="48">Last 48 Hours</option>
+                            <option value="168">Last 7 Days</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="toggleMainChart()">
+                            <span id="chartToggleIcon">▼</span> <span id="chartToggleText">Hide</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="chart-container" id="mainChartContainer" style="height: 300px;">
+                    <canvas id="mainSpeedChart"></canvas>
+                </div>
+            </div>
+
             <!-- Command Panel -->
             <div class="command-panel" id="commandPanel">
                 <div class="command-panel-header">
@@ -1262,14 +1496,24 @@
             </div>
 
             <!-- Devices Section -->
-            <div class="section-header">
+            <div class="section-header" id="devicesHeader">
                 <div class="section-title">
                     Devices
                     <span class="badge badge-info" id="filteredCount">0</span>
                 </div>
-                <div class="view-toggle">
-                    <button class="view-toggle-btn active" onclick="setView('grid')">Grid</button>
-                    <button class="view-toggle-btn" onclick="setView('table')">Table</button>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <div class="dropdown" id="columnDropdown">
+                        <button class="btn btn-secondary" onclick="toggleColumnMenu()">
+                            ⚙️ Columns
+                        </button>
+                        <div class="dropdown-menu" id="columnMenu" style="display: none;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="view-toggle">
+                        <button class="view-toggle-btn active" onclick="setView('grid')">Grid</button>
+                        <button class="view-toggle-btn" onclick="setView('table')">Table</button>
+                    </div>
                 </div>
             </div>
 
@@ -1283,21 +1527,72 @@
                 <thead>
                     <tr>
                         <th style="width: 40px;"></th>
-                        <th class="sortable" onclick="sortBy('hostname')">Device ↕</th>
-                        <th class="sortable" onclick="sortBy('user_email')">User ↕</th>
-                        <th class="sortable" onclick="sortBy('avg_download')">Download ↕</th>
-                        <th class="sortable" onclick="sortBy('avg_upload')">Upload ↕</th>
-                        <th class="sortable" onclick="sortBy('avg_latency')">Latency ↕</th>
-                        <th class="sortable" onclick="sortBy('test_count')">Tests ↕</th>
-                        <th>VPN</th>
-                        <th>Version</th>
-                        <th class="sortable" onclick="sortBy('last_test')">Last Seen ↕</th>
+                        <th class="sortable" onclick="sortBy('hostname')">Device <span class="sort-indicator" data-col="hostname">↕</span></th>
+                        <th class="sortable" onclick="sortBy('user_email')">User <span class="sort-indicator" data-col="user_email">↕</span></th>
+                        <th class="sortable" onclick="sortBy('avg_download')">Download <span class="sort-indicator" data-col="avg_download">↕</span></th>
+                        <th class="sortable" onclick="sortBy('avg_upload')">Upload <span class="sort-indicator" data-col="avg_upload">↕</span></th>
+                        <th class="sortable" onclick="sortBy('avg_latency')">Latency <span class="sort-indicator" data-col="avg_latency">↕</span></th>
+                        <th class="sortable" onclick="sortBy('avg_jitter')">Jitter <span class="sort-indicator" data-col="avg_jitter">↕</span></th>
+                        <th class="sortable" onclick="sortBy('test_count')">Tests <span class="sort-indicator" data-col="test_count">↕</span></th>
+                        <th class="sortable" onclick="sortBy('vpn_status')">VPN <span class="sort-indicator" data-col="vpn_status">↕</span></th>
+                        <th class="sortable" onclick="sortBy('app_version')">Version <span class="sort-indicator" data-col="app_version">↕</span></th>
+                        <th class="sortable" onclick="sortBy('last_test')">Last Seen <span class="sort-indicator" data-col="last_test">↕</span></th>
                     </tr>
                 </thead>
                 <tbody id="deviceTableBody">
                     <!-- Populated by JS -->
                 </tbody>
             </table>
+
+            <!-- Analytics View -->
+            <div id="analyticsView" style="display: none;">
+                <div class="top-bar">
+                    <h1 class="page-title">Analytics</h1>
+                    <div class="top-bar-actions">
+                        <select class="filter-select" id="analyticsTimeRange" style="width: 130px;" onchange="loadAnalytics()">
+                            <option value="7">Last 7 Days</option>
+                            <option value="30" selected>Last 30 Days</option>
+                            <option value="90">Last 90 Days</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">Speed Trends</div>
+                        <div style="height: 250px;">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">WiFi Band Distribution</div>
+                        <div style="height: 250px;">
+                            <canvas id="bandChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">VPN Usage</div>
+                        <div style="height: 250px;">
+                            <canvas id="vpnChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">Top Access Points (by Speed)</div>
+                        <div id="topAPsTable" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="analytics-card">
+                        <div class="analytics-card-title">Problem Devices</div>
+                        <div id="problemDevicesTable" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -1337,7 +1632,14 @@
 
             <!-- Speed Section -->
             <div class="detail-section">
-                <div class="detail-section-title">🚀 Speed Metrics</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <div class="detail-section-title" style="margin-bottom: 0;">🚀 Speed Metrics</div>
+                    <select class="filter-select" id="detailChartRange" style="width: 110px; font-size: 0.75rem;" onchange="loadDeviceSpeedHistory(currentDevice?.device_id)">
+                        <option value="24">24 Hours</option>
+                        <option value="48">48 Hours</option>
+                        <option value="168">7 Days</option>
+                    </select>
+                </div>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-item-label">Download</div>
@@ -1523,6 +1825,101 @@
         let adminToken = sessionStorage.getItem('adminToken') || null;
         let adminUsername = sessionStorage.getItem('adminUsername') || null;
 
+        // Sidebar collapse functionality
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        }
+
+        // Restore sidebar state on load
+        function restoreSidebarState() {
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                document.getElementById('sidebar').classList.add('collapsed');
+            }
+        }
+
+        // Column visibility state (persisted in localStorage)
+        let visibleColumns = JSON.parse(localStorage.getItem('columnPrefs')) || {
+            device: true,
+            user: true,
+            download: true,
+            upload: true,
+            latency: true,
+            jitter: false,
+            tests: true,
+            vpn: true,
+            version: false,
+            lastSeen: true
+        };
+
+        const columnDefinitions = [
+            { id: 'device', label: 'Device', index: 1 },
+            { id: 'user', label: 'User', index: 2 },
+            { id: 'download', label: 'Download', index: 3 },
+            { id: 'upload', label: 'Upload', index: 4 },
+            { id: 'latency', label: 'Latency', index: 5 },
+            { id: 'jitter', label: 'Jitter', index: 6 },
+            { id: 'tests', label: 'Tests', index: 7 },
+            { id: 'vpn', label: 'VPN', index: 8 },
+            { id: 'version', label: 'Version', index: 9 },
+            { id: 'lastSeen', label: 'Last Seen', index: 10 }
+        ];
+
+        function toggleColumnMenu() {
+            const menu = document.getElementById('columnMenu');
+            const isHidden = menu.style.display === 'none';
+            menu.style.display = isHidden ? 'block' : 'none';
+
+            if (isHidden) {
+                populateColumnMenu();
+                // Close on click outside
+                setTimeout(() => {
+                    document.addEventListener('click', closeColumnMenuOnOutsideClick);
+                }, 10);
+            }
+        }
+
+        function closeColumnMenuOnOutsideClick(e) {
+            const dropdown = document.getElementById('columnDropdown');
+            if (!dropdown.contains(e.target)) {
+                document.getElementById('columnMenu').style.display = 'none';
+                document.removeEventListener('click', closeColumnMenuOnOutsideClick);
+            }
+        }
+
+        function populateColumnMenu() {
+            const menu = document.getElementById('columnMenu');
+            menu.innerHTML = columnDefinitions.map(col => `
+                <label class="dropdown-item">
+                    <input type="checkbox" ${visibleColumns[col.id] ? 'checked' : ''}
+                           onchange="toggleColumn('${col.id}')">
+                    ${col.label}
+                </label>
+            `).join('');
+        }
+
+        function toggleColumn(colId) {
+            visibleColumns[colId] = !visibleColumns[colId];
+            localStorage.setItem('columnPrefs', JSON.stringify(visibleColumns));
+            applyColumnVisibility();
+            renderDevices();
+        }
+
+        function applyColumnVisibility() {
+            const table = document.getElementById('deviceTable');
+            if (!table) return;
+
+            columnDefinitions.forEach(col => {
+                const headerCells = table.querySelectorAll(`thead th:nth-child(${col.index + 1})`);
+                const bodyCells = table.querySelectorAll(`tbody td:nth-child(${col.index + 1})`);
+
+                const display = visibleColumns[col.id] ? '' : 'none';
+                headerCells.forEach(cell => cell.style.display = display);
+                bodyCells.forEach(cell => cell.style.display = display);
+            });
+        }
+
         // Check admin session on load
         async function checkAdminSession() {
             if (!adminToken) {
@@ -1667,18 +2064,24 @@
             signal: 'all',
             speed: 'all',
             lastSeen: '1h',
-            search: ''
+            search: '',
+            ssid: 'all',
+            ap: 'all',
+            channel: 'all'
         };
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            restoreSidebarState();
             checkAdminSession();
             loadData();
+            loadMainChart();
             loadCommandHistory();
             setupFilterListeners();
 
             // Auto-refresh every 60 seconds
             setInterval(loadData, 60000);
+            setInterval(loadMainChart, 60000);
             setInterval(loadCommandHistory, 30000);
         });
 
@@ -1704,6 +2107,411 @@
                 filters.lastSeen = e.target.value;
                 filterDevices();
             });
+
+            // SSID, AP, Channel dropdown filters
+            document.getElementById('ssidFilter').addEventListener('change', (e) => {
+                filters.ssid = e.target.value;
+                filterDevices();
+            });
+
+            document.getElementById('apFilter').addEventListener('change', (e) => {
+                filters.ap = e.target.value;
+                filterDevices();
+            });
+
+            document.getElementById('channelFilter').addEventListener('change', (e) => {
+                filters.channel = e.target.value;
+                filterDevices();
+            });
+        }
+
+        // Populate filter dropdowns with data
+        function populateFilterDropdowns() {
+            // Extract unique values from devices
+            const ssids = [...new Set(devices.map(d => d.ssid).filter(Boolean))].sort();
+            const aps = [...new Set(devices.map(d => d.ap_name).filter(Boolean))].sort();
+            const channels = [...new Set(devices.map(d => d.channel).filter(Boolean))].sort((a, b) => a - b);
+
+            // Populate SSID dropdown
+            const ssidSelect = document.getElementById('ssidFilter');
+            const currentSsid = ssidSelect.value;
+            ssidSelect.innerHTML = '<option value="all">All Networks</option>' +
+                ssids.map(s => `<option value="${s}">${s}</option>`).join('');
+            if (ssids.includes(currentSsid)) ssidSelect.value = currentSsid;
+
+            // Populate AP dropdown
+            const apSelect = document.getElementById('apFilter');
+            const currentAp = apSelect.value;
+            apSelect.innerHTML = '<option value="all">All APs</option>' +
+                aps.map(a => `<option value="${a}">${a}</option>`).join('');
+            if (aps.includes(currentAp)) apSelect.value = currentAp;
+
+            // Populate Channel dropdown
+            const channelSelect = document.getElementById('channelFilter');
+            const currentChannel = channelSelect.value;
+            channelSelect.innerHTML = '<option value="all">All Channels</option>' +
+                channels.map(c => `<option value="${c}">Ch ${c}</option>`).join('');
+            if (channels.map(String).includes(currentChannel)) channelSelect.value = currentChannel;
+        }
+
+        // Main aggregated chart state
+        let mainChart = null;
+
+        // Load main chart data
+        async function loadMainChart() {
+            const hours = parseInt(document.getElementById('chartTimeRange').value) || 24;
+
+            try {
+                const response = await fetch(`/api/stats/timeline?hours=${hours}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                renderMainChart(data);
+            } catch (err) {
+                console.error('Error loading main chart:', err);
+            }
+        }
+
+        // Render main chart
+        function renderMainChart(data) {
+            const ctx = document.getElementById('mainSpeedChart').getContext('2d');
+
+            if (mainChart) {
+                mainChart.destroy();
+            }
+
+            if (!data || data.length === 0) {
+                return;
+            }
+
+            mainChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => new Date(d.hour)),
+                    datasets: [
+                        {
+                            label: 'Avg Download (Mbps)',
+                            data: data.map(d => parseFloat(d.avg_download) || 0),
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Avg Upload (Mbps)',
+                            data: data.map(d => parseFloat(d.avg_upload) || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#a1a1aa', usePointStyle: true }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(30, 30, 45, 0.9)',
+                            titleColor: '#f4f4f5',
+                            bodyColor: '#a1a1aa',
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            borderWidth: 1,
+                            callbacks: {
+                                title: (items) => {
+                                    const date = new Date(items[0].parsed.x);
+                                    return date.toLocaleString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    });
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'hour',
+                                displayFormats: { hour: 'MMM d, HH:mm' }
+                            },
+                            ticks: { color: '#a1a1aa' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#a1a1aa' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Toggle main chart visibility
+        function toggleMainChart() {
+            const container = document.getElementById('mainChartContainer');
+            const icon = document.getElementById('chartToggleIcon');
+            const text = document.getElementById('chartToggleText');
+
+            container.classList.toggle('collapsed');
+            if (container.classList.contains('collapsed')) {
+                icon.textContent = '▶';
+                text.textContent = 'Show';
+            } else {
+                icon.textContent = '▼';
+                text.textContent = 'Hide';
+            }
+        }
+
+        // Analytics charts state
+        let trendChart = null;
+        let bandChart = null;
+        let vpnChart = null;
+
+        // Load analytics data
+        async function loadAnalytics() {
+            const days = parseInt(document.getElementById('analyticsTimeRange').value) || 30;
+
+            try {
+                const [trends, wifi, vpn] = await Promise.all([
+                    fetch(`/api/stats/trends?days=${days}`).then(r => r.json()),
+                    fetch('/api/stats/wifi').then(r => r.json()),
+                    fetch('/api/stats/vpn').then(r => r.json())
+                ]);
+
+                renderTrendChart(trends);
+                renderBandChart(wifi);
+                renderVPNChart(vpn);
+                renderTopAPs(wifi);
+                renderProblemDevices();
+            } catch (err) {
+                console.error('Error loading analytics:', err);
+                showToast('Failed to load analytics', 'error');
+            }
+        }
+
+        // Render trend chart
+        function renderTrendChart(data) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+
+            if (trendChart) trendChart.destroy();
+
+            if (!data || data.length === 0) return;
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => new Date(d.date)),
+                    datasets: [
+                        {
+                            label: 'Avg Download',
+                            data: data.map(d => parseFloat(d.avg_download) || 0),
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Avg Upload',
+                            data: data.map(d => parseFloat(d.avg_upload) || 0),
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { color: '#a1a1aa' } }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: { unit: 'day' },
+                            ticks: { color: '#a1a1aa' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#a1a1aa' },
+                            grid: { color: 'rgba(255,255,255,0.05)' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render band distribution chart
+        function renderBandChart(data) {
+            const ctx = document.getElementById('bandChart').getContext('2d');
+
+            if (bandChart) bandChart.destroy();
+
+            const bandData = data.byBand || [];
+            if (bandData.length === 0) return;
+
+            bandChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: bandData.map(b => b.band || 'Unknown'),
+                    datasets: [{
+                        data: bandData.map(b => b.test_count),
+                        backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#f43f5e'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#a1a1aa' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render VPN usage chart
+        function renderVPNChart(data) {
+            const ctx = document.getElementById('vpnChart').getContext('2d');
+
+            if (vpnChart) vpnChart.destroy();
+
+            const connected = data.connected || 0;
+            const disconnected = data.disconnected || 0;
+
+            vpnChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Connected', 'Disconnected'],
+                    datasets: [{
+                        data: [connected, disconnected],
+                        backgroundColor: ['#10b981', '#f43f5e'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#a1a1aa' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render top APs table
+        function renderTopAPs(data) {
+            const container = document.getElementById('topAPsTable');
+            const apData = data.bySSID || [];
+
+            if (apData.length === 0) {
+                container.innerHTML = '<p style="color: var(--muted-foreground);">No AP data available</p>';
+                return;
+            }
+
+            // Sort by avg download descending
+            const sorted = [...apData].sort((a, b) => (b.avg_download || 0) - (a.avg_download || 0));
+
+            container.innerHTML = `
+                <table class="device-table" style="font-size: 0.875rem;">
+                    <thead>
+                        <tr>
+                            <th>Network</th>
+                            <th>Avg Download</th>
+                            <th>Tests</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sorted.slice(0, 10).map(ap => `
+                            <tr>
+                                <td>${ap.ssid || 'Unknown'}</td>
+                                <td>${formatSpeed(ap.avg_download)} Mbps</td>
+                                <td>${ap.test_count}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        // Render problem devices table
+        function renderProblemDevices() {
+            const container = document.getElementById('problemDevicesTable');
+
+            // Filter devices with issues
+            const problemDevices = devices.filter(d => {
+                const download = parseFloat(d.avg_download) || 0;
+                const jitter = parseFloat(d.avg_jitter) || 0;
+                const rssi = parseInt(d.rssi_dbm) || 0;
+                return download < 25 || jitter > 50 || (rssi < -75 && rssi !== 0);
+            });
+
+            if (problemDevices.length === 0) {
+                container.innerHTML = '<p style="color: var(--success);">No problem devices detected</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table class="device-table" style="font-size: 0.875rem;">
+                    <thead>
+                        <tr>
+                            <th>Device</th>
+                            <th>Issue</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${problemDevices.slice(0, 10).map(d => {
+                            const download = parseFloat(d.avg_download) || 0;
+                            const jitter = parseFloat(d.avg_jitter) || 0;
+                            const rssi = parseInt(d.rssi_dbm) || 0;
+
+                            let issue = '', value = '';
+                            if (download < 25) {
+                                issue = 'Slow Speed';
+                                value = formatSpeed(download) + ' Mbps';
+                            } else if (jitter > 50) {
+                                issue = 'High Jitter';
+                                value = jitter.toFixed(1) + ' ms';
+                            } else if (rssi < -75 && rssi !== 0) {
+                                issue = 'Weak Signal';
+                                value = rssi + ' dBm';
+                            }
+
+                            return `
+                                <tr onclick="openDeviceDetail('${d.device_id}')" style="cursor: pointer;">
+                                    <td>${d.hostname || d.device_id.substring(0, 8)}</td>
+                                    <td><span class="badge badge-warning">${issue}</span></td>
+                                    <td>${value}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
         }
 
         // Load data
@@ -1721,6 +2529,9 @@
 
                 // Update stats
                 updateStats(data);
+
+                // Populate filter dropdowns
+                populateFilterDropdowns();
 
                 // Apply filters
                 filterDevices();
@@ -1825,6 +2636,21 @@
                     const download = parseFloat(device.avg_download) || 0;
                     if (filters.speed === 'fast' && download < 50) return false;
                     if (filters.speed === 'slow' && download >= 50) return false;
+                }
+
+                // SSID filter
+                if (filters.ssid !== 'all') {
+                    if (device.ssid !== filters.ssid) return false;
+                }
+
+                // AP filter
+                if (filters.ap !== 'all') {
+                    if (device.ap_name !== filters.ap) return false;
+                }
+
+                // Channel filter
+                if (filters.channel !== 'all') {
+                    if (String(device.channel) !== String(filters.channel)) return false;
                 }
 
                 return true;
@@ -1956,7 +2782,7 @@
             if (filteredDevices.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="10" class="empty-state">
+                        <td colspan="11" class="empty-state">
                             <div class="empty-state-icon">🔍</div>
                             <p>No devices match your filters</p>
                         </td>
@@ -1968,6 +2794,7 @@
             tbody.innerHTML = filteredDevices.map(device => {
                 const status = getDeviceStatus(device);
                 const isSelected = selectedDevices.has(device.device_id);
+                const jitter = parseFloat(device.avg_jitter) || 0;
 
                 return `
                     <tr class="${isSelected ? 'selected' : ''}" onclick="openDeviceDetail('${device.device_id}')">
@@ -1986,7 +2813,8 @@
                         <td>${formatSpeed(device.avg_download)}</td>
                         <td>${formatSpeed(device.avg_upload)}</td>
                         <td>${formatLatency(device.avg_latency)}</td>
-                        <td>${device.test_count || 0} tests</td>
+                        <td><span class="${jitter > 50 ? 'text-warning' : ''}">${jitter.toFixed(1)} ms</span></td>
+                        <td>${device.test_count || 0}</td>
                         <td>
                             <span class="badge ${device.vpn_status === 'connected' ? 'badge-success' : 'badge-warning'}">
                                 ${device.vpn_status === 'connected' ? '🔒 ' + (device.vpn_name || 'VPN') : '⚠️ None'}
@@ -1997,6 +2825,9 @@
                     </tr>
                 `;
             }).join('');
+
+            // Apply column visibility after rendering
+            applyColumnVisibility();
         }
 
         // View toggle
@@ -2016,6 +2847,18 @@
                 sortColumn = column;
                 sortDirection = 'desc';
             }
+
+            // Update sort indicators
+            document.querySelectorAll('.sort-indicator').forEach(el => {
+                el.textContent = '↕';
+                el.classList.remove('active');
+            });
+            const indicator = document.querySelector(`.sort-indicator[data-col="${column}"]`);
+            if (indicator) {
+                indicator.textContent = sortDirection === 'asc' ? '↑' : '↓';
+                indicator.classList.add('active');
+            }
+
             filterDevices();
         }
 
@@ -2104,8 +2947,12 @@
 
         // Load device speed history and populate detail fields
         async function loadDeviceSpeedHistory(deviceId) {
+            if (!deviceId) return;
+
+            const hours = parseInt(document.getElementById('detailChartRange')?.value) || 24;
+
             try {
-                const response = await fetch(`/api/devices/${deviceId}/health`);
+                const response = await fetch(`/api/devices/${deviceId}/health?hours=${hours}`);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
@@ -2395,7 +3242,10 @@
                 signal: 'all',
                 speed: 'all',
                 lastSeen: '1h',
-                search: ''
+                search: '',
+                ssid: 'all',
+                ap: 'all',
+                channel: 'all'
             };
 
             document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -2403,6 +3253,9 @@
             });
             document.getElementById('lastSeenFilter').value = '1h';
             document.getElementById('searchInput').value = '';
+            document.getElementById('ssidFilter').value = 'all';
+            document.getElementById('apFilter').value = 'all';
+            document.getElementById('channelFilter').value = 'all';
 
             filterDevices();
         }
@@ -2490,8 +3343,31 @@
             });
             event.target.closest('.nav-item').classList.add('active');
 
-            // For now, just show devices view
-            // Can expand to show different views
+            // Hide all views
+            document.getElementById('mainChartSection').style.display = 'none';
+            document.getElementById('commandPanel').style.display = 'none';
+            document.getElementById('devicesHeader').style.display = 'none';
+            document.getElementById('deviceGrid').style.display = 'none';
+            document.getElementById('deviceTable').classList.remove('active');
+            document.getElementById('analyticsView').style.display = 'none';
+
+            // Show selected view
+            switch (view) {
+                case 'devices':
+                    document.getElementById('mainChartSection').style.display = 'block';
+                    document.getElementById('commandPanel').style.display = 'block';
+                    document.getElementById('devicesHeader').style.display = 'flex';
+                    renderDevices();
+                    break;
+                case 'analytics':
+                    document.getElementById('analyticsView').style.display = 'block';
+                    loadAnalytics();
+                    break;
+                case 'commands':
+                    document.getElementById('commandPanel').style.display = 'block';
+                    loadCommandHistory();
+                    break;
+            }
         }
 
         // Bulk command modal
