@@ -480,17 +480,90 @@
 
             try {
                 const response = await fetch(`/api/my/${encodeURIComponent(email)}`);
-                const data = await response.json();
+                const rawData = await response.json();
 
                 if (!response.ok) {
-                    renderError(data.message || 'Unable to load data');
+                    renderError(rawData.message || 'Unable to load data');
                     return;
                 }
 
+                // Transform API response to match frontend expectations
+                const data = transformApiData(rawData);
                 renderDashboard(data);
             } catch (err) {
                 renderError('Failed to connect to server');
             }
+        }
+
+        function getSignalQuality(rssi) {
+            if (!rssi) return 'Unknown';
+            if (rssi >= -50) return 'Excellent';
+            if (rssi >= -60) return 'Good';
+            if (rssi >= -70) return 'Fair';
+            if (rssi >= -80) return 'Weak';
+            return 'Poor';
+        }
+
+        function transformApiData(raw) {
+            // Get latest test from recentTests array
+            const latest = raw.recentTests?.[0] || null;
+
+            // Determine status based on healthScore
+            let status = 'critical';
+            let statusMessage = 'Connection Issues Detected';
+            if (raw.healthScore >= 80) {
+                status = 'healthy';
+                statusMessage = 'Your connection is healthy';
+            } else if (raw.healthScore >= 50) {
+                status = 'warning';
+                statusMessage = 'Some issues detected';
+            }
+
+            // Extract WiFi info from latest test
+            const wifi = latest ? {
+                ssid: latest.ssid || 'Unknown',
+                band: latest.band || '-',
+                channel: latest.channel || '-',
+                rssi: latest.rssi_dbm || null,
+                noise: latest.noise_dbm || null,
+                snr: latest.snr_db || null,
+                txRate: latest.tx_rate_mbps || null,
+                mcs: latest.mcs_index ?? null,
+                signalQuality: getSignalQuality(latest.rssi_dbm)
+            } : null;
+
+            // Map issues to problems format
+            const problems = (raw.issues || []).map(issue => ({
+                type: issue.toLowerCase().replace(/\s+/g, '_'),
+                message: issue,
+                severity: issue.toLowerCase().includes('critical') ? 'critical' : 'warning'
+            }));
+
+            // Create health object with median jitter
+            const health = {
+                median_jitter: parseFloat(raw.stats?.avg_jitter) || 0,
+                avg_download: parseFloat(raw.stats?.avg_download) || 0,
+                avg_upload: parseFloat(raw.stats?.avg_upload) || 0,
+                avg_latency: parseFloat(raw.stats?.avg_latency) || 0
+            };
+
+            // Transform timeline data to match expected format
+            const timeline = (raw.timeline || []).map(t => ({
+                timestamp_utc: t.hour, // Will be parsed by Date()
+                download_mbps: parseFloat(t.avg_download) || 0,
+                upload_mbps: parseFloat(t.avg_upload) || 0
+            }));
+
+            return {
+                ...raw,
+                latest,
+                status,
+                statusMessage,
+                wifi,
+                problems,
+                health,
+                timeline
+            };
         }
 
         function renderError(message) {
