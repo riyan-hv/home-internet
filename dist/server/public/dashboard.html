@@ -3682,6 +3682,9 @@
 
         // Render devices
         function renderDevices() {
+            // Don't render if not in devices view (prevents overriding analytics view)
+            if (currentNavView !== 'devices') return;
+
             if (currentView === 'grid') {
                 renderDeviceGrid();
             } else {
