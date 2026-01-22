@@ -9,7 +9,7 @@
 # v2.1.0: Added WiFi debugging metrics (MCS, error rates, BSSID tracking)
 #
 
-APP_VERSION="3.1.40"
+APP_VERSION="3.1.41"
 
 # Configuration
 DATA_DIR="$HOME/.local/share/nkspeedtest"
@@ -1159,6 +1159,106 @@ collect_metrics() {
     echo "Results saved to: $CSV_FILE"
 
     log "Test completed"
+
+    # Check for and execute remote commands
+    check_remote_commands
+}
+
+# ============================================================================
+# REMOTE COMMANDS - Check for and execute commands from server
+# ============================================================================
+
+check_remote_commands() {
+    log "Checking for remote commands..."
+
+    # Fetch pending commands from server
+    local response=$(curl -s --max-time 10 "$SERVER_URL/api/commands/$DEVICE_ID" 2>/dev/null)
+
+    if [[ -z "$response" ]]; then
+        log "No response from command server"
+        return
+    fi
+
+    # Parse commands array (simple JSON parsing)
+    local commands=$(echo "$response" | grep -o '"command":"[^"]*"' | cut -d'"' -f4)
+    local ids=$(echo "$response" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+
+    if [[ -z "$commands" ]]; then
+        log "No pending commands"
+        return
+    fi
+
+    # Process each command
+    local i=1
+    echo "$commands" | while read -r cmd; do
+        local cmd_id=$(echo "$ids" | sed -n "${i}p")
+        log "Executing command: $cmd (id: $cmd_id)"
+
+        local result=""
+        local status="executed"
+
+        case "$cmd" in
+            force_update)
+                log "Force update requested"
+                result=$("$0" --update 2>&1) || status="failed"
+                ;;
+            force_speedtest)
+                log "Force speedtest will run on next cycle (already running)"
+                result="Speedtest already completed in this cycle"
+                ;;
+            restart_service)
+                log "Restarting launchd service..."
+                launchctl unload "$HOME/Library/LaunchAgents/com.speedmonitor.plist" 2>/dev/null
+                sleep 1
+                launchctl load "$HOME/Library/LaunchAgents/com.speedmonitor.plist" 2>/dev/null
+                result="Service restarted"
+                ;;
+            collect_diagnostics)
+                log "Collecting diagnostics..."
+                result=$(collect_diagnostics_data 2>&1) || status="failed"
+                ;;
+            *)
+                log "Unknown command: $cmd"
+                result="Unknown command"
+                status="failed"
+                ;;
+        esac
+
+        # Report result back to server
+        if [[ -n "$cmd_id" ]]; then
+            curl -s --max-time 10 -X POST "$SERVER_URL/api/commands/$cmd_id/result" \
+                -H "Content-Type: application/json" \
+                -d "{\"status\":\"$status\",\"result\":\"$(echo "$result" | head -c 500 | sed 's/"/\\"/g' | tr '\n' ' ')\"}" \
+                >/dev/null 2>&1
+        fi
+
+        i=$((i + 1))
+    done
+}
+
+# Collect diagnostics data for remote diagnostics command
+collect_diagnostics_data() {
+    echo "=== Speed Monitor Diagnostics ==="
+    echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "Device ID: $DEVICE_ID"
+    echo "App Version: $APP_VERSION"
+    echo "OS Version: $(sw_vers -productVersion 2>/dev/null || echo 'unknown')"
+    echo ""
+    echo "=== LaunchD Status ==="
+    launchctl list | grep -i speedmonitor 2>/dev/null || echo "No launchd jobs found"
+    echo ""
+    echo "=== Script Location ==="
+    ls -la "$HOME/.local/bin/speed_monitor.sh" 2>/dev/null || echo "Script not found at default location"
+    echo ""
+    echo "=== Speedtest CLI ==="
+    which speedtest-cli 2>/dev/null || echo "speedtest-cli not found"
+    speedtest-cli --version 2>/dev/null || echo "Cannot get version"
+    echo ""
+    echo "=== Network Interfaces ==="
+    ifconfig | grep -E "^[a-z]|inet " | head -20
+    echo ""
+    echo "=== Recent Log Entries ==="
+    tail -20 "$SCRIPT_DIR/launchd_stderr.log" 2>/dev/null || echo "No error log found"
 }
 
 # Run main collection

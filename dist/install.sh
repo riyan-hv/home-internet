@@ -1,5 +1,5 @@
 #!/bin/bash
-# Speed Monitor v3.1.40 - One-line installer for employees
+# Speed Monitor v3.1.41 - One-line installer for employees
 # Install:   bash <(curl -fsSL https://home-internet.onrender.com/install.sh)
 # Uninstall: bash <(curl -fsSL https://home-internet.onrender.com/uninstall.sh)
 
@@ -14,7 +14,7 @@ BIN_DIR="$HOME/.local/bin"
 PLIST_NAME="com.speedmonitor.plist"
 MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
 
-echo "=== Speed Monitor v3.1.40 Installer ==="
+echo "=== Speed Monitor v3.1.41 Installer ==="
 echo ""
 
 # =============================================================================
@@ -206,7 +206,7 @@ echo ""
 # =============================================================================
 # STEP 5: Download and install fresh components
 # =============================================================================
-echo "Step 3: Installing Speed Monitor v3.1.40..."
+echo "Step 3: Installing Speed Monitor v3.1.41..."
 
 # Download speed_monitor.sh from GitHub (most reliable source)
 echo "  Downloading speed_monitor.sh from GitHub..."
@@ -371,7 +371,7 @@ echo " Done!"
 # =============================================================================
 echo ""
 echo "=========================================="
-echo "   Speed Monitor v3.1.40 Installed!"
+echo "   Speed Monitor v3.1.41 Installed!"
 echo "=========================================="
 echo ""
 echo "What's running:"

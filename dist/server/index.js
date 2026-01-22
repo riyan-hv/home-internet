@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 
-const APP_VERSION = '3.1.40';
+const APP_VERSION = '3.1.41';
 
 // AP name mapping based on BSSID prefix (first 5 bytes) to handle multiple virtual APs
 const AP_PREFIX_MAP = {
@@ -307,6 +307,23 @@ async function initDatabase() {
 
       CREATE INDEX IF NOT EXISTS idx_diagnostics_device ON device_diagnostics(device_id, submitted_at);
       CREATE INDEX IF NOT EXISTS idx_diagnostics_email ON device_diagnostics(user_email);
+
+      -- Remote commands queue for push-based device control
+      CREATE TABLE IF NOT EXISTS device_commands (
+        id SERIAL PRIMARY KEY,
+        device_id TEXT NOT NULL,           -- Target device (or 'all' for broadcast)
+        command TEXT NOT NULL,             -- Command type: force_update, force_speedtest, restart_service
+        payload TEXT,                      -- Optional JSON payload for command parameters
+        status TEXT DEFAULT 'pending',     -- pending, acknowledged, executed, expired, failed
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        acknowledged_at TIMESTAMP,
+        executed_at TIMESTAMP,
+        result TEXT,                       -- Execution result or error message
+        created_by TEXT                    -- Who issued the command (email/admin)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_commands_device_status ON device_commands(device_id, status);
+      CREATE INDEX IF NOT EXISTS idx_commands_created ON device_commands(created_at);
     `);
     console.log('Database schema initialized');
   } catch (err) {
@@ -1655,11 +1672,180 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       version: APP_VERSION,
       database: 'postgresql',
-      features: ['wifi_debugging', 'mcs_tracking', 'error_rates', 'roaming_detection'],
+      features: ['wifi_debugging', 'mcs_tracking', 'error_rates', 'roaming_detection', 'remote_commands'],
       total_results: parseInt(count.rows[0].count)
     });
   } catch (err) {
     res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// ============================================================================
+// REMOTE COMMANDS API - Push commands to devices
+// ============================================================================
+
+// Create a command for a device (or all devices)
+// POST /api/commands
+// Body: { device_id: "xxx" or "all", command: "force_update|force_speedtest|restart_service", payload?: {}, created_by?: "admin" }
+app.post('/api/commands', async (req, res) => {
+  try {
+    const { device_id, command, payload, created_by } = req.body;
+
+    if (!device_id || !command) {
+      return res.status(400).json({ error: 'device_id and command are required' });
+    }
+
+    const validCommands = ['force_update', 'force_speedtest', 'restart_service', 'collect_diagnostics'];
+    if (!validCommands.includes(command)) {
+      return res.status(400).json({ error: `Invalid command. Valid commands: ${validCommands.join(', ')}` });
+    }
+
+    // If device_id is 'all', create commands for all active devices (seen in last 24h)
+    if (device_id === 'all') {
+      const activeDevices = await pool.query(`
+        SELECT DISTINCT device_id FROM speed_results
+        WHERE timestamp_utc > NOW() - INTERVAL '24 hours'
+      `);
+
+      const results = [];
+      for (const row of activeDevices.rows) {
+        const result = await pool.query(`
+          INSERT INTO device_commands (device_id, command, payload, created_by)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id, device_id, command, status, created_at
+        `, [row.device_id, command, payload ? JSON.stringify(payload) : null, created_by || 'dashboard']);
+        results.push(result.rows[0]);
+      }
+
+      res.json({
+        success: true,
+        message: `Command '${command}' queued for ${results.length} active devices`,
+        commands: results
+      });
+    } else {
+      // Single device command
+      const result = await pool.query(`
+        INSERT INTO device_commands (device_id, command, payload, created_by)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, device_id, command, status, created_at
+      `, [device_id, command, payload ? JSON.stringify(payload) : null, created_by || 'dashboard']);
+
+      res.json({ success: true, command: result.rows[0] });
+    }
+  } catch (err) {
+    console.error('Error creating command:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get pending commands for a device (called by client after each speedtest)
+// GET /api/commands/:device_id
+app.get('/api/commands/:device_id', async (req, res) => {
+  try {
+    const { device_id } = req.params;
+
+    // Get pending commands for this device, mark them as acknowledged
+    const commands = await pool.query(`
+      UPDATE device_commands
+      SET status = 'acknowledged', acknowledged_at = NOW()
+      WHERE device_id = $1 AND status = 'pending'
+      RETURNING id, command, payload, created_at
+    `, [device_id]);
+
+    // Also expire old pending commands (older than 1 hour)
+    await pool.query(`
+      UPDATE device_commands
+      SET status = 'expired'
+      WHERE status = 'pending' AND created_at < NOW() - INTERVAL '1 hour'
+    `);
+
+    res.json({ commands: commands.rows });
+  } catch (err) {
+    console.error('Error fetching commands:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Report command execution result (called by client after executing command)
+// POST /api/commands/:id/result
+app.post('/api/commands/:id/result', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, result } = req.body;
+
+    const validStatuses = ['executed', 'failed'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Valid: ${validStatuses.join(', ')}` });
+    }
+
+    await pool.query(`
+      UPDATE device_commands
+      SET status = $1, executed_at = NOW(), result = $2
+      WHERE id = $3
+    `, [status, result || null, id]);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error updating command result:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// List all commands (for dashboard)
+// GET /api/commands?status=pending&limit=100
+app.get('/api/commands', async (req, res) => {
+  try {
+    const { status, device_id, limit = 100 } = req.query;
+
+    let query = `
+      SELECT c.*,
+        (SELECT hostname FROM speed_results WHERE device_id = c.device_id ORDER BY timestamp_utc DESC LIMIT 1) as hostname,
+        (SELECT user_email FROM speed_results WHERE device_id = c.device_id ORDER BY timestamp_utc DESC LIMIT 1) as user_email
+      FROM device_commands c
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (status) {
+      params.push(status);
+      query += ` AND c.status = $${params.length}`;
+    }
+
+    if (device_id) {
+      params.push(device_id);
+      query += ` AND c.device_id = $${params.length}`;
+    }
+
+    params.push(parseInt(limit));
+    query += ` ORDER BY c.created_at DESC LIMIT $${params.length}`;
+
+    const result = await pool.query(query, params);
+    res.json({ commands: result.rows });
+  } catch (err) {
+    console.error('Error listing commands:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a pending command
+// DELETE /api/commands/:id
+app.delete('/api/commands/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(`
+      DELETE FROM device_commands WHERE id = $1 AND status = 'pending'
+      RETURNING id
+    `, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Command not found or already processed' });
+    }
+
+    res.json({ success: true, deleted: id });
+  } catch (err) {
+    console.error('Error deleting command:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
