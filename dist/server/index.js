@@ -40,11 +40,18 @@ function lookupAPName(bssid) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy headers (required for Render and other cloud providers)
+// This fixes express-rate-limit X-Forwarded-For validation errors
+app.set('trust proxy', 1);
+
 // Rate limiting - increased for 300+ device fleet behind corporate NAT
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 500, // limit each IP to 500 requests per windowMs (supports 300 devices behind NAT)
-  message: { error: 'Too many requests, please try again later.' }
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  validate: { trustProxy: false } // Disable trust proxy validation (we handle it with app.set)
 });
 
 // Middleware
@@ -1603,6 +1610,18 @@ app.get('/health', async (req, res) => {
   } catch (err) {
     res.status(500).json({ status: 'error', error: err.message });
   }
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err.message);
+  console.error('Stack:', err.stack);
+  res.status(500).json({ error: 'Internal server error', message: err.message });
+});
+
+// Handle uncaught promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 app.listen(PORT, () => {
