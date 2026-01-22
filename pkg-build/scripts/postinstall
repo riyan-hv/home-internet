@@ -16,6 +16,34 @@ log() {
 
 log "=== Speed Monitor Postinstall Starting ==="
 
+# === CLEANUP: Stop old services and remove user-level files ===
+# NOTE: Do NOT delete files from /usr/local/speedmonitor/bin here!
+# The PKG payload has ALREADY installed new files there before postinstall runs.
+log "Cleaning up old user installations..."
+
+# Stop any running launchd services for all users
+for user_home in /Users/*; do
+    username=$(basename "$user_home")
+    if [ "$username" = "Shared" ] || [ "$username" = "Guest" ]; then
+        continue
+    fi
+    if [ -f "$user_home/Library/LaunchAgents/com.speedmonitor.plist" ]; then
+        sudo -u "$username" launchctl unload "$user_home/Library/LaunchAgents/com.speedmonitor.plist" 2>/dev/null || true
+    fi
+    if [ -f "$user_home/Library/LaunchAgents/com.speedmonitor.menubar.plist" ]; then
+        sudo -u "$username" launchctl unload "$user_home/Library/LaunchAgents/com.speedmonitor.menubar.plist" 2>/dev/null || true
+    fi
+    # Remove old symlinks from user bin (will be recreated below)
+    rm -f "$user_home/.local/bin/speed_monitor.sh" 2>/dev/null || true
+    rm -f "$user_home/.local/bin/wifi_info" 2>/dev/null || true
+    rm -f "$user_home/.local/bin/speedtest-cli" 2>/dev/null || true
+done
+
+# Remove old SpeedMonitor.app (will be rebuilt below)
+rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+
+log "Old user installations cleaned up"
+
 # Load configuration
 if [ -f "${INSTALL_DIR}/lib/config.sh" ]; then
     source "${INSTALL_DIR}/lib/config.sh"

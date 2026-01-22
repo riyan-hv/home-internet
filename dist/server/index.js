@@ -1608,6 +1608,44 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+// Debug: Check speedtest strategy distribution
+app.get('/api/debug/status-distribution', async (req, res) => {
+  try {
+    const distribution = await pool.query(`
+      SELECT
+        status,
+        COUNT(*) as count,
+        ROUND(AVG(download_mbps)::numeric, 2) as avg_download,
+        ROUND(AVG(upload_mbps)::numeric, 2) as avg_upload,
+        ROUND(AVG(latency_ms)::numeric, 2) as avg_latency,
+        ROUND(AVG(jitter_ms)::numeric, 2) as avg_jitter
+      FROM speed_results
+      GROUP BY status
+      ORDER BY count DESC
+    `);
+
+    const byDevice = await pool.query(`
+      SELECT
+        COALESCE(user_email, device_id) as device,
+        status,
+        COUNT(*) as count,
+        ROUND(AVG(upload_mbps)::numeric, 2) as avg_upload,
+        ROUND(AVG(latency_ms)::numeric, 2) as avg_latency
+      FROM speed_results
+      WHERE timestamp_utc > NOW() - INTERVAL '24 hours'
+      GROUP BY device, status
+      ORDER BY device, count DESC
+    `);
+
+    res.json({
+      overall: distribution.rows,
+      byDeviceLast24h: byDevice.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get('/health', async (req, res) => {
   try {
