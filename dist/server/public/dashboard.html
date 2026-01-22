@@ -1217,11 +1217,26 @@
                         ⚡ Remote Commands
                         <span class="badge badge-info" id="selectedCount" style="display: none;">0 selected</span>
                     </div>
-                    <button class="btn btn-secondary" onclick="toggleCommandHistory()">
-                        📜 History
-                    </button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span id="adminStatus" style="font-size: 0.75rem; color: var(--muted-foreground); display: none;"></span>
+                        <button class="btn btn-secondary" id="adminLoginBtn" onclick="showAdminLogin()">
+                            🔐 Admin Login
+                        </button>
+                        <button class="btn btn-secondary" id="adminLogoutBtn" onclick="adminLogout()" style="display: none;">
+                            🚪 Logout
+                        </button>
+                        <button class="btn btn-secondary" onclick="toggleCommandHistory()">
+                            📜 History
+                        </button>
+                    </div>
                 </div>
-                <div class="command-buttons">
+                <!-- Login required message (shown when not authenticated) -->
+                <div id="commandLoginRequired" class="command-buttons" style="padding: 20px; text-align: center; color: var(--muted-foreground);">
+                    <p style="margin: 0;">🔒 Admin login required to send commands</p>
+                    <p style="margin: 8px 0 0 0; font-size: 0.8rem;">Dashboard is read-only. Click "Admin Login" to enable commands.</p>
+                </div>
+                <!-- Command buttons (shown when authenticated) -->
+                <div class="command-buttons" id="commandButtonsPanel" style="display: none;">
                     <button class="command-btn" onclick="sendCommand('force_update')" id="cmdUpdate">
                         🔄 Force Update
                     </button>
@@ -1455,15 +1470,42 @@
             </div>
         </div>
         <div class="slide-over-footer">
-            <button class="btn btn-secondary" onclick="sendCommandToDevice('force_update')">🔄 Update</button>
-            <button class="btn btn-secondary" onclick="sendCommandToDevice('force_speedtest')">🚀 Speedtest</button>
-            <button class="btn btn-secondary" onclick="sendCommandToDevice('collect_diagnostics')">🔍 Diagnostics</button>
+            <button class="btn btn-secondary" onclick="sendCommandToDevice('force_update')" disabled style="opacity: 0.5;" title="Admin login required">🔄 Update</button>
+            <button class="btn btn-secondary" onclick="sendCommandToDevice('force_speedtest')" disabled style="opacity: 0.5;" title="Admin login required">🚀 Speedtest</button>
+            <button class="btn btn-secondary" onclick="sendCommandToDevice('collect_diagnostics')" disabled style="opacity: 0.5;" title="Admin login required">🔍 Diagnostics</button>
             <button class="btn btn-primary" onclick="openDevicePortal()">📊 Full Dashboard</button>
         </div>
     </div>
 
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: var(--background-subtle); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 32px; width: 100%; max-width: 400px; margin: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <h2 style="margin: 0; font-size: 1.25rem;">🔐 Admin Login</h2>
+                <button onclick="hideAdminLogin()" style="background: none; border: none; color: var(--muted-foreground); cursor: pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+            <form id="adminLoginForm" onsubmit="handleAdminLogin(event)">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 0.875rem; color: var(--muted-foreground);">Email</label>
+                    <input type="email" id="adminEmail" required style="width: 100%; padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); font-size: 1rem;" placeholder="admin@example.com">
+                </div>
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; margin-bottom: 8px; font-size: 0.875rem; color: var(--muted-foreground);">Password</label>
+                    <input type="password" id="adminPassword" required style="width: 100%; padding: 12px; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); font-size: 1rem;" placeholder="Enter password">
+                </div>
+                <div id="loginError" style="display: none; padding: 12px; background: var(--destructive-muted); border-radius: var(--radius-sm); color: var(--destructive); margin-bottom: 16px; font-size: 0.875rem;"></div>
+                <button type="submit" style="width: 100%; padding: 12px; background: var(--info); color: white; border: none; border-radius: var(--radius-sm); font-size: 1rem; cursor: pointer; font-weight: 500;">
+                    Login
+                </button>
+            </form>
+            <p style="margin: 16px 0 0 0; font-size: 0.75rem; color: var(--muted-foreground); text-align: center;">
+                Only authorized admins can send remote commands.
+            </p>
+        </div>
+    </div>
 
     <script>
         // State
@@ -1476,6 +1518,146 @@
         let sortDirection = 'desc';
         let detailChart = null;
         let commandHistory = [];
+
+        // Admin authentication state
+        let adminToken = sessionStorage.getItem('adminToken') || null;
+        let adminUsername = sessionStorage.getItem('adminUsername') || null;
+
+        // Check admin session on load
+        async function checkAdminSession() {
+            if (!adminToken) {
+                updateAdminUI(false);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/admin/session', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const data = await response.json();
+
+                if (data.valid) {
+                    adminUsername = data.username;
+                    updateAdminUI(true);
+                } else {
+                    // Token expired or invalid
+                    adminToken = null;
+                    adminUsername = null;
+                    sessionStorage.removeItem('adminToken');
+                    sessionStorage.removeItem('adminUsername');
+                    updateAdminUI(false);
+                }
+            } catch (err) {
+                console.error('Error checking admin session:', err);
+                updateAdminUI(false);
+            }
+        }
+
+        // Update UI based on admin authentication status
+        function updateAdminUI(isAuthenticated) {
+            const loginBtn = document.getElementById('adminLoginBtn');
+            const logoutBtn = document.getElementById('adminLogoutBtn');
+            const adminStatus = document.getElementById('adminStatus');
+            const commandButtons = document.getElementById('commandButtonsPanel');
+            const loginRequired = document.getElementById('commandLoginRequired');
+            const deviceCommandBtns = document.querySelectorAll('.slide-over-footer .btn-secondary');
+
+            if (isAuthenticated) {
+                loginBtn.style.display = 'none';
+                logoutBtn.style.display = 'block';
+                adminStatus.style.display = 'inline';
+                adminStatus.textContent = `Logged in as ${adminUsername}`;
+                commandButtons.style.display = 'flex';
+                loginRequired.style.display = 'none';
+                // Enable device detail command buttons
+                deviceCommandBtns.forEach(btn => {
+                    if (btn.textContent.includes('Update') || btn.textContent.includes('Speedtest') || btn.textContent.includes('Diagnostics')) {
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                    }
+                });
+            } else {
+                loginBtn.style.display = 'block';
+                logoutBtn.style.display = 'none';
+                adminStatus.style.display = 'none';
+                commandButtons.style.display = 'none';
+                loginRequired.style.display = 'block';
+                // Disable device detail command buttons
+                deviceCommandBtns.forEach(btn => {
+                    if (btn.textContent.includes('Update') || btn.textContent.includes('Speedtest') || btn.textContent.includes('Diagnostics')) {
+                        btn.disabled = true;
+                        btn.style.opacity = '0.5';
+                    }
+                });
+            }
+        }
+
+        // Show admin login modal
+        function showAdminLogin() {
+            document.getElementById('adminLoginModal').style.display = 'flex';
+            document.getElementById('adminEmail').focus();
+        }
+
+        // Hide admin login modal
+        function hideAdminLogin() {
+            document.getElementById('adminLoginModal').style.display = 'none';
+            document.getElementById('adminLoginForm').reset();
+            document.getElementById('loginError').style.display = 'none';
+        }
+
+        // Handle admin login
+        async function handleAdminLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+            const errorDiv = document.getElementById('loginError');
+
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    adminToken = data.token;
+                    adminUsername = data.username;
+                    sessionStorage.setItem('adminToken', adminToken);
+                    sessionStorage.setItem('adminUsername', adminUsername);
+                    hideAdminLogin();
+                    updateAdminUI(true);
+                    showToast('Admin login successful', 'success');
+                } else {
+                    errorDiv.textContent = data.error || 'Login failed';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                console.error('Login error:', err);
+                errorDiv.textContent = 'Connection error. Please try again.';
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        // Admin logout
+        async function adminLogout() {
+            try {
+                await fetch('/api/admin/logout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+            } catch (err) {
+                console.error('Logout error:', err);
+            }
+
+            adminToken = null;
+            adminUsername = null;
+            sessionStorage.removeItem('adminToken');
+            sessionStorage.removeItem('adminUsername');
+            updateAdminUI(false);
+            showToast('Logged out', 'info');
+        }
 
         // Filters
         let filters = {
@@ -1490,6 +1672,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            checkAdminSession();
             loadData();
             loadCommandHistory();
             setupFilterListeners();
@@ -2040,6 +2223,12 @@
 
         // Send command
         async function sendCommand(command) {
+            if (!adminToken) {
+                showToast('Admin login required to send commands', 'error');
+                showAdminLogin();
+                return;
+            }
+
             const targetDevices = selectedDevices.size > 0
                 ? Array.from(selectedDevices)
                 : [currentDevice?.device_id].filter(Boolean);
@@ -2051,11 +2240,20 @@
 
             try {
                 for (const deviceId of targetDevices) {
-                    await fetch('/api/commands', {
+                    const response = await fetch('/api/commands', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${adminToken}`
+                        },
                         body: JSON.stringify({ device_id: deviceId, command })
                     });
+
+                    if (response.status === 401) {
+                        showToast('Session expired. Please login again.', 'error');
+                        adminLogout();
+                        return;
+                    }
                 }
 
                 showToast(`Command "${command}" sent to ${targetDevices.length} device(s)`, 'success');
@@ -2067,14 +2265,29 @@
 
         // Send command to specific device
         async function sendCommandToDevice(command) {
+            if (!adminToken) {
+                showToast('Admin login required to send commands', 'error');
+                showAdminLogin();
+                return;
+            }
+
             if (!currentDevice) return;
 
             try {
-                await fetch('/api/commands', {
+                const response = await fetch('/api/commands', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
                     body: JSON.stringify({ device_id: currentDevice.device_id, command })
                 });
+
+                if (response.status === 401) {
+                    showToast('Session expired. Please login again.', 'error');
+                    adminLogout();
+                    return;
+                }
 
                 showToast(`Command "${command}" sent to ${currentDevice.hostname || 'device'}`, 'success');
                 loadCommandHistory();
@@ -2085,15 +2298,30 @@
 
         // Send command to all active devices
         async function sendCommandToAll() {
+            if (!adminToken) {
+                showToast('Admin login required to send commands', 'error');
+                showAdminLogin();
+                return;
+            }
+
             const command = prompt('Enter command (force_update, force_speedtest, restart_service, collect_diagnostics):');
             if (!command) return;
 
             try {
                 const response = await fetch('/api/commands', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
                     body: JSON.stringify({ device_id: 'all', command })
                 });
+
+                if (response.status === 401) {
+                    showToast('Session expired. Please login again.', 'error');
+                    adminLogout();
+                    return;
+                }
 
                 const data = await response.json();
                 showToast(data.message || 'Commands sent', 'success');

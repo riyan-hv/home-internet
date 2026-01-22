@@ -3,8 +3,49 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const crypto = require('crypto');
 
 const APP_VERSION = '3.1.41';
+
+// Admin authentication configuration
+// Password is hashed using SHA-256 for security
+const ADMIN_CONFIG = {
+  username: 'riyan.b@hyperverge.co',
+  // SHA-256 hash of the password
+  passwordHash: crypto.createHash('sha256').update('Jesusloves$345').digest('hex')
+};
+
+// Active admin sessions (in-memory for simplicity, resets on server restart)
+const adminSessions = new Map();
+
+// Generate a secure session token
+function generateSessionToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Verify admin session
+function verifyAdminSession(token) {
+  if (!token) return false;
+  const session = adminSessions.get(token);
+  if (!session) return false;
+  // Sessions expire after 24 hours
+  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
+    adminSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+// Middleware to require admin authentication
+function requireAdmin(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  if (!verifyAdminSession(token)) {
+    return res.status(401).json({ error: 'Admin authentication required' });
+  }
+  next();
+}
 
 // AP name mapping based on BSSID prefix (first 5 bytes) to handle multiple virtual APs
 const AP_PREFIX_MAP = {
@@ -480,6 +521,60 @@ app.get('/api/version', (req, res) => {
       min_client: '3.0.0'
     }
   });
+});
+
+// ============================================================================
+// ADMIN AUTHENTICATION API
+// ============================================================================
+
+// Admin login
+app.post('/api/admin/login', (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+
+  const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+
+  if (username === ADMIN_CONFIG.username && passwordHash === ADMIN_CONFIG.passwordHash) {
+    const token = generateSessionToken();
+    adminSessions.set(token, { username, createdAt: Date.now() });
+
+    return res.json({
+      success: true,
+      token,
+      username,
+      expiresIn: '24h'
+    });
+  }
+
+  return res.status(401).json({ error: 'Invalid username or password' });
+});
+
+// Admin logout
+app.post('/api/admin/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  if (token) {
+    adminSessions.delete(token);
+  }
+
+  res.json({ success: true });
+});
+
+// Check admin session validity
+app.get('/api/admin/session', (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  if (verifyAdminSession(token)) {
+    const session = adminSessions.get(token);
+    return res.json({ valid: true, username: session.username });
+  }
+
+  return res.json({ valid: false });
 });
 
 // Serve installer .command file (opens Terminal on macOS when clicked)
@@ -1709,10 +1804,11 @@ app.get('/health', async (req, res) => {
 // REMOTE COMMANDS API - Push commands to devices
 // ============================================================================
 
-// Create a command for a device (or all devices)
+// Create a command for a device (or all devices) - ADMIN ONLY
 // POST /api/commands
 // Body: { device_id: "xxx" or "all", command: "force_update|force_speedtest|restart_service", payload?: {}, created_by?: "admin" }
-app.post('/api/commands', async (req, res) => {
+// Requires: Authorization: Bearer <token>
+app.post('/api/commands', requireAdmin, async (req, res) => {
   try {
     const { device_id, command, payload, created_by } = req.body;
 
