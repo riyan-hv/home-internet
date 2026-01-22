@@ -50,9 +50,9 @@ if [[ -d "/usr/local/speedmonitor/bin" ]]; then
     rm -f /usr/local/speedmonitor/bin/wifi_info 2>/dev/null || true
 fi
 
-# Remove SpeedMonitor.app
+# Remove SpeedMonitor.app (may need elevated permissions)
 echo "  Removing SpeedMonitor.app..."
-rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+rm -rf /Applications/SpeedMonitor.app 2>/dev/null || sudo rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
 
 # Remove old data files (but preserve email and device_id)
 echo "  Cleaning data directory (preserving identity)..."
@@ -210,10 +210,16 @@ curl -fsSL "$DOWNLOAD_URL/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip
 if [[ -f /tmp/SpeedMonitor.app.zip ]]; then
     unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/ > /dev/null 2>&1
     if [[ -d /tmp/SpeedMonitor.app ]]; then
-        cp -r /tmp/SpeedMonitor.app /Applications/
+        # Remove existing app first (handles permission issues)
+        if [[ -d /Applications/SpeedMonitor.app ]]; then
+            rm -rf /Applications/SpeedMonitor.app 2>/dev/null || sudo rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+        fi
+
+        # Copy new app
+        cp -R /tmp/SpeedMonitor.app /Applications/ 2>/dev/null || sudo cp -R /tmp/SpeedMonitor.app /Applications/
 
         # Remove quarantine flag (Gatekeeper)
-        xattr -cr /Applications/SpeedMonitor.app 2>/dev/null || true
+        xattr -cr /Applications/SpeedMonitor.app 2>/dev/null || sudo xattr -cr /Applications/SpeedMonitor.app 2>/dev/null || true
 
         # Ad-hoc code sign
         codesign --force --deep --sign - /Applications/SpeedMonitor.app 2>/dev/null || true
