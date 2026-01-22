@@ -152,28 +152,30 @@ poll_commands() {
     # Parse commands using simple bash (avoid jq dependency)
     # Response format: {"commands":[{"id":1,"command":"force_speedtest","payload":null},...]}
 
-    # Extract each command using grep/sed
-    local commands=$(echo "$response" | grep -o '\{"id":[^}]*\}' || true)
+    # Extract the commands array content
+    local commands_json=$(echo "$response" | sed 's/.*"commands":\[\(.*\)\].*/\1/')
 
-    if [[ -z "$commands" ]]; then
+    if [[ -z "$commands_json" || "$commands_json" == "$response" ]]; then
         return
     fi
 
-    # Process each command
-    while IFS= read -r cmd_json; do
-        if [[ -z "$cmd_json" ]]; then
+    # Split by },{ to get individual commands (using tr to replace delimiter)
+    echo "$commands_json" | tr '}' '\n' | while read -r cmd_fragment; do
+        if [[ -z "$cmd_fragment" ]]; then
             continue
         fi
 
-        # Extract fields
-        local cmd_id=$(echo "$cmd_json" | grep -o '"id":[0-9]*' | grep -o '[0-9]*')
-        local command=$(echo "$cmd_json" | grep -o '"command":"[^"]*"' | sed 's/"command":"//;s/"//')
-        local payload=$(echo "$cmd_json" | grep -o '"payload":[^,}]*' | sed 's/"payload"://' || echo "null")
+        # Extract id using sed (macOS compatible)
+        local cmd_id=$(echo "$cmd_fragment" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+
+        # Extract command using sed
+        local command=$(echo "$cmd_fragment" | sed -n 's/.*"command":"\([^"]*\)".*/\1/p')
 
         if [[ -n "$cmd_id" && -n "$command" ]]; then
-            execute_command "$cmd_id" "$command" "$payload"
+            log "Received command: $command (id: $cmd_id)"
+            execute_command "$cmd_id" "$command" "null"
         fi
-    done <<< "$commands"
+    done
 }
 
 # Main loop
