@@ -45,13 +45,26 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // Rate limiting - increased for 300+ device fleet behind corporate NAT
+// Use custom key generator to properly extract client IP from X-Forwarded-For
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 500, // limit each IP to 500 requests per windowMs (supports 300 devices behind NAT)
   message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  validate: { trustProxy: false } // Disable trust proxy validation (we handle it with app.set)
+  keyGenerator: (req) => {
+    // Extract client IP from X-Forwarded-For header (first IP is the original client)
+    const forwardedFor = req.headers['x-forwarded-for'];
+    if (forwardedFor) {
+      const ips = forwardedFor.split(',').map(ip => ip.trim());
+      return ips[0]; // Return the original client IP
+    }
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  }
 });
 
 // Middleware
