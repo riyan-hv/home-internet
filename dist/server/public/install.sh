@@ -335,19 +335,7 @@ if [[ -d "/Applications/SpeedMonitor.app" ]]; then
 EOF
 
     launchctl load "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME"
-
-    # Launch the app
-    if open /Applications/SpeedMonitor.app 2>/dev/null; then
-        echo "  ✓ Menu bar app launched"
-    else
-        nohup /Applications/SpeedMonitor.app/Contents/MacOS/SpeedMonitor &>/dev/null &
-        sleep 1
-        if pgrep -x "SpeedMonitor" > /dev/null; then
-            echo "  ✓ Menu bar app launched"
-        else
-            echo "  ⚠ Please open SpeedMonitor.app manually from Applications"
-        fi
-    fi
+    echo "  ✓ Menu bar app started via launchd"
 fi
 
 # Create launchd plist for command listener (polls every 30 seconds for remote commands)
