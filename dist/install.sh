@@ -1,54 +1,70 @@
 #!/bin/bash
-# Speed Monitor v3.1.37 - One-line installer for employees
+# Speed Monitor v3.1.38 - One-line installer for employees
 # Install:   bash <(curl -fsSL https://home-internet.onrender.com/install.sh)
 # Uninstall: bash <(curl -fsSL https://home-internet.onrender.com/uninstall.sh)
 
 set -e
 
 SERVER_URL="https://home-internet.onrender.com"
-DOWNLOAD_URL="$SERVER_URL"  # Files hosted on Render server
+GITHUB_RAW="https://raw.githubusercontent.com/hyperkishore/home-internet/main"
+DOWNLOAD_URL="$SERVER_URL"  # For install.sh and app.zip hosted on server
 SCRIPT_DIR="$HOME/.local/share/nkspeedtest"
 CONFIG_DIR="$HOME/.config/nkspeedtest"
 BIN_DIR="$HOME/.local/bin"
 PLIST_NAME="com.speedmonitor.plist"
 MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
 
-echo "=== Speed Monitor v3.1.37 Installer ==="
+echo "=== Speed Monitor v3.1.38 Installer ==="
 echo ""
 
 # =============================================================================
 # STEP 1: FULL CLEANUP FIRST - Remove ALL old installations before anything else
 # =============================================================================
-echo "Step 1: Removing all old Speed Monitor installations..."
+echo "Step 1: Removing ALL old Speed Monitor installations..."
 
-# Kill any running SpeedMonitor processes
+# Force kill any running SpeedMonitor processes (multiple attempts)
 echo "  Stopping running processes..."
-pkill -x "SpeedMonitor" 2>/dev/null || true
-pkill -f "speed_monitor.sh" 2>/dev/null || true
-sleep 1
+pkill -9 -x "SpeedMonitor" 2>/dev/null || true
+pkill -9 -f "SpeedMonitor.app" 2>/dev/null || true
+pkill -9 -f "speed_monitor.sh" 2>/dev/null || true
+killall "SpeedMonitor" 2>/dev/null || true
+sleep 2
 
-# Unload and REMOVE all launchd services
-echo "  Removing launchd services..."
+# Unload ALL launchd services (check all possible plist names)
+echo "  Removing ALL launchd services..."
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/$PLIST_NAME" 2>/dev/null || true
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" 2>/dev/null || true
 launchctl unload "$HOME/Library/LaunchAgents/$PLIST_NAME" 2>/dev/null || true
 launchctl unload "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" 2>/dev/null || true
+launchctl unload "$HOME/Library/LaunchAgents/com.nkspeedtest.plist" 2>/dev/null || true
 rm -f "$HOME/Library/LaunchAgents/$PLIST_NAME" 2>/dev/null || true
 rm -f "$HOME/Library/LaunchAgents/$MENUBAR_PLIST_NAME" 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/com.nkspeedtest.plist" 2>/dev/null || true
 
 # Remove scripts from ~/.local/bin (curl install location)
 echo "  Removing scripts from ~/.local/bin..."
 rm -f "$BIN_DIR/speed_monitor.sh" 2>/dev/null || true
 rm -f "$BIN_DIR/wifi_info" 2>/dev/null || true
+rm -f "$BIN_DIR/nkspeedtest" 2>/dev/null || true
 
 # Remove scripts from /usr/local/speedmonitor/bin (PKG install location)
-if [[ -d "/usr/local/speedmonitor/bin" ]]; then
-    echo "  Removing scripts from /usr/local/speedmonitor/bin..."
-    rm -f /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true
-    rm -f /usr/local/speedmonitor/bin/wifi_info 2>/dev/null || true
-fi
+echo "  Removing scripts from /usr/local/speedmonitor/bin..."
+rm -f /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true
+rm -f /usr/local/speedmonitor/bin/wifi_info 2>/dev/null || true
+# Remove entire PKG directory if empty after cleanup
+rmdir /usr/local/speedmonitor/bin 2>/dev/null || true
+rmdir /usr/local/speedmonitor/lib 2>/dev/null || true
+rmdir /usr/local/speedmonitor 2>/dev/null || true
 
-# Remove SpeedMonitor.app
+# Remove SpeedMonitor.app from ALL possible locations
 echo "  Removing SpeedMonitor.app..."
 rm -rf /Applications/SpeedMonitor.app 2>/dev/null || true
+rm -rf "$HOME/Applications/SpeedMonitor.app" 2>/dev/null || true
+rm -rf /tmp/SpeedMonitor.app 2>/dev/null || true
+
+# Remove old SwiftBar plugins (legacy)
+echo "  Removing legacy SwiftBar plugins..."
+rm -f "$HOME/Library/Application Support/SwiftBar/Plugins/nkspeedtest"*.sh 2>/dev/null || true
 
 # Remove old data files (but preserve email and device_id)
 echo "  Cleaning data directory (preserving identity)..."
@@ -57,8 +73,24 @@ rm -f "$SCRIPT_DIR/launchd_stderr.log" 2>/dev/null || true
 rm -f "$SCRIPT_DIR/menubar_stdout.log" 2>/dev/null || true
 rm -f "$SCRIPT_DIR/menubar_stderr.log" 2>/dev/null || true
 rm -f "$SCRIPT_DIR/wifi_info.swift" 2>/dev/null || true
+rm -f "$SCRIPT_DIR/update.log" 2>/dev/null || true
+rm -f "$SCRIPT_DIR/prev_interface_stats" 2>/dev/null || true
+rm -f "$SCRIPT_DIR/prev_tcp_retransmits" 2>/dev/null || true
+rm -f "$SCRIPT_DIR/prev_bssid" 2>/dev/null || true
+rm -f "$SCRIPT_DIR/roam_count" 2>/dev/null || true
 
-echo "✓ Old installations removed"
+# Remove app caches
+echo "  Clearing app caches..."
+rm -rf "$HOME/Library/Caches/com.speedmonitor" 2>/dev/null || true
+rm -rf "$HOME/Library/Caches/SpeedMonitor" 2>/dev/null || true
+
+# Remove temporary files
+rm -f /tmp/SpeedMonitor.app.zip 2>/dev/null || true
+rm -f /tmp/speed_monitor.sh 2>/dev/null || true
+rm -f /tmp/install.sh 2>/dev/null || true
+rm -f /tmp/speedmonitor_repair.sh 2>/dev/null || true
+
+echo "✓ All old installations completely removed"
 echo ""
 
 # =============================================================================
@@ -174,12 +206,16 @@ echo ""
 # =============================================================================
 # STEP 5: Download and install fresh components
 # =============================================================================
-echo "Step 3: Installing Speed Monitor v3.1.37..."
+echo "Step 3: Installing Speed Monitor v3.1.38..."
 
-# Download speed_monitor.sh
-echo "  Downloading speed_monitor.sh..."
-curl -fsSL "$DOWNLOAD_URL/speed_monitor.sh" -o "$BIN_DIR/speed_monitor.sh"
+# Download speed_monitor.sh from GitHub (most reliable source)
+echo "  Downloading speed_monitor.sh from GitHub..."
+curl -fsSL "$GITHUB_RAW/speed_monitor.sh" -o "$BIN_DIR/speed_monitor.sh"
 chmod +x "$BIN_DIR/speed_monitor.sh"
+
+# Verify the downloaded script has the correct version
+DOWNLOADED_VERSION=$(grep "APP_VERSION=" "$BIN_DIR/speed_monitor.sh" | head -1 | cut -d'"' -f2)
+echo "  Downloaded script version: $DOWNLOADED_VERSION"
 
 # Verify download
 if [[ ! -f "$BIN_DIR/speed_monitor.sh" ]]; then
@@ -194,9 +230,9 @@ if [[ -d "/usr/local/speedmonitor/bin" ]]; then
     chmod +x /usr/local/speedmonitor/bin/speed_monitor.sh 2>/dev/null || true
 fi
 
-# Download and install SpeedMonitor.app
-echo "  Downloading SpeedMonitor.app..."
-curl -fsSL "$DOWNLOAD_URL/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip
+# Download and install SpeedMonitor.app from GitHub
+echo "  Downloading SpeedMonitor.app from GitHub..."
+curl -fsSL "$GITHUB_RAW/dist/SpeedMonitor.app.zip" -o /tmp/SpeedMonitor.app.zip
 
 if [[ -f /tmp/SpeedMonitor.app.zip ]]; then
     unzip -o /tmp/SpeedMonitor.app.zip -d /tmp/ > /dev/null 2>&1
@@ -219,13 +255,13 @@ else
     echo "  ⚠ Failed to download SpeedMonitor.app"
 fi
 
-# Optional: wifi_info Swift helper (backup)
+# Optional: wifi_info Swift helper (backup for older macOS)
 if command -v swiftc &> /dev/null; then
     echo "  Setting up WiFi helper..."
     if [[ -f "/opt/homebrew/bin/wifi_info" ]]; then
         ln -sf "/opt/homebrew/bin/wifi_info" "$BIN_DIR/wifi_info"
     else
-        curl -fsSL "$DOWNLOAD_URL/wifi_info.swift" -o "$SCRIPT_DIR/wifi_info.swift" 2>/dev/null || true
+        curl -fsSL "$GITHUB_RAW/dist/src/wifi_info.swift" -o "$SCRIPT_DIR/wifi_info.swift" 2>/dev/null || true
         swiftc -O -o "$BIN_DIR/wifi_info" "$SCRIPT_DIR/wifi_info.swift" -framework CoreWLAN -framework Foundation 2>/dev/null || true
     fi
 fi
@@ -335,7 +371,7 @@ echo " Done!"
 # =============================================================================
 echo ""
 echo "=========================================="
-echo "   Speed Monitor v3.1.37 Installed!"
+echo "   Speed Monitor v3.1.38 Installed!"
 echo "=========================================="
 echo ""
 echo "What's running:"

@@ -382,7 +382,8 @@ class SpeedDataManager: ObservableObject {
             return
         }
         isRunningTest = true
-        testCountdown = 60  // Increased to 60 seconds - speed tests can take longer
+        testCountdown = 90  // Increased to 90 seconds - speed tests can take longer with fallbacks
+        lastError = ""
 
         // Start countdown timer on main thread
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
@@ -393,24 +394,40 @@ class SpeedDataManager: ObservableObject {
         }
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let scriptPath = NSHomeDirectory() + "/.local/bin/speed_monitor.sh"
-            print("[SpeedTest] Script path: \(scriptPath)")
+            // Check multiple possible script locations
+            let possiblePaths = [
+                NSHomeDirectory() + "/.local/bin/speed_monitor.sh",
+                "/usr/local/speedmonitor/bin/speed_monitor.sh"
+            ]
 
-            // Check if script exists
-            if !FileManager.default.fileExists(atPath: scriptPath) {
-                print("[SpeedTest] ERROR: Script not found at \(scriptPath)")
+            var scriptPath: String? = nil
+            for path in possiblePaths {
+                if FileManager.default.fileExists(atPath: path) {
+                    scriptPath = path
+                    print("[SpeedTest] Found script at: \(path)")
+                    break
+                }
+            }
+
+            // Check if script exists in any location
+            guard let foundScriptPath = scriptPath else {
+                print("[SpeedTest] ERROR: Script not found in any location")
                 DispatchQueue.main.async {
                     self?.countdownTimer?.invalidate()
                     self?.countdownTimer = nil
                     self?.testCountdown = 0
                     self?.isRunningTest = false
+                    self?.lastError = "Script not found - click Repair"
+                    self?.hasScript = false
                 }
                 return
             }
 
+            let scriptPathToUse = foundScriptPath
+
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = [scriptPath]
+            process.arguments = [scriptPathToUse]
             process.environment = [
                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                 "HOME": NSHomeDirectory(),
@@ -783,7 +800,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.37"
+    static let appVersion = "3.1.38"
 
     func checkForUpdate() {
         // Check version directly from GitHub to avoid deployment delays
@@ -919,15 +936,29 @@ class SpeedDataManager: ObservableObject {
             // Check for speedtest-cli in common locations including package install path
             let speedtestPath = Self.runCommand("/bin/bash -c 'export PATH=$HOME/.local/bin:/usr/local/speedmonitor/bin:/opt/homebrew/bin:/usr/local/bin:$PATH && which speedtest-cli'")
             // Check both symlink location and package install location
-            let scriptExistsSymlink = FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.local/bin/speed_monitor.sh")
+            let scriptExistsLocal = FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.local/bin/speed_monitor.sh")
             let scriptExistsPackage = FileManager.default.fileExists(atPath: "/usr/local/speedmonitor/bin/speed_monitor.sh")
             let launchdStatus = Self.runCommand("/bin/launchctl list | /usr/bin/grep speedmonitor")
+
+            // Check script versions if they exist
+            var localVersion = ""
+            var packageVersion = ""
+            if scriptExistsLocal {
+                localVersion = Self.runCommand("grep 'APP_VERSION=' ~/.local/bin/speed_monitor.sh | head -1 | cut -d'\"' -f2")
+            }
+            if scriptExistsPackage {
+                packageVersion = Self.runCommand("grep 'APP_VERSION=' /usr/local/speedmonitor/bin/speed_monitor.sh | head -1 | cut -d'\"' -f2")
+            }
 
             DispatchQueue.main.async {
                 self?.hasHomebrew = !brewPath.isEmpty && !brewPath.contains("not found")
                 self?.hasSpeedtest = !speedtestPath.isEmpty && !speedtestPath.contains("not found")
-                self?.hasScript = scriptExistsSymlink || scriptExistsPackage
+                self?.hasScript = scriptExistsLocal || scriptExistsPackage
                 self?.hasLaunchd = !launchdStatus.isEmpty
+
+                // Log version info for debugging
+                print("[Install] Local script: \(scriptExistsLocal ? localVersion : "not found")")
+                print("[Install] Package script: \(scriptExistsPackage ? packageVersion : "not found")")
             }
         }
     }
