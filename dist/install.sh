@@ -5,6 +5,23 @@
 
 set -e
 
+# =============================================================================
+# SAFETY CHECK: Do NOT run with sudo
+# =============================================================================
+if [[ $EUID -eq 0 ]]; then
+    echo "❌ ERROR: Do not run this installer with sudo!"
+    echo ""
+    echo "Running with sudo will create files owned by root in your home directory,"
+    echo "which causes permission errors."
+    echo ""
+    echo "Please run WITHOUT sudo:"
+    echo "  curl -fsSL https://home-internet.onrender.com/install.sh | bash"
+    echo ""
+    echo "Or if you downloaded it:"
+    echo "  bash install.sh"
+    exit 1
+fi
+
 SERVER_URL="https://home-internet.onrender.com"
 GITHUB_RAW="https://raw.githubusercontent.com/hyperkishore/home-internet/main"
 DOWNLOAD_URL="$SERVER_URL"  # For install.sh and app.zip hosted on server
@@ -15,6 +32,23 @@ PLIST_NAME="com.speedmonitor.plist"
 MENUBAR_PLIST_NAME="com.speedmonitor.menubar.plist"
 
 echo "=== Speed Monitor v3.1.45 Installer ==="
+
+# =============================================================================
+# CHECK: Detect previous sudo damage (directories owned by root)
+# =============================================================================
+if [[ -d "$HOME/.local" && ! -w "$HOME/.local" ]]; then
+    echo ""
+    echo "❌ ERROR: Permission problem detected!"
+    echo ""
+    echo "The directory $HOME/.local exists but is not writable."
+    echo "This usually happens if the installer was previously run with sudo."
+    echo ""
+    echo "To fix this, run:"
+    echo "  sudo chown -R \$(whoami) ~/.local ~/.config"
+    echo ""
+    echo "Then run this installer again (without sudo)."
+    exit 1
+fi
 echo ""
 
 # =============================================================================
@@ -273,6 +307,9 @@ echo ""
 # STEP 6: Create and load launchd services
 # =============================================================================
 echo "Step 4: Setting up background services..."
+
+# Ensure LaunchAgents directory exists (doesn't exist by default on some Macs)
+mkdir -p "$HOME/Library/LaunchAgents"
 
 # Detect Homebrew location dynamically (Apple Silicon vs Intel)
 if [[ -d "/opt/homebrew/bin" ]]; then
