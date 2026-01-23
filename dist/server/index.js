@@ -49,6 +49,7 @@ function requireAdmin(req, res, next) {
 
 // AP name mapping based on BSSID prefix (first 5 bytes) to handle multiple virtual APs
 const AP_PREFIX_MAP = {
+  // Old APs (a8:ba:25 prefix)
   'a8:ba:25:ce:a4:d': '2F-AP_1', 'a8:ba:25:6a:4d': '2F-AP_1',   // 2F-AP_1
   'a8:ba:25:ce:a1:a': '2F-AP_2', 'a8:ba:25:6a:1a': '2F-AP_2',   // 2F-AP_2
   'a8:ba:25:ce:a1:2': '2F-AP_3', 'a8:ba:25:6a:12': '2F-AP_3',   // 2F-AP_3
@@ -58,7 +59,21 @@ const AP_PREFIX_MAP = {
   'a8:ba:25:ce:9f:5': '3F-AP-1', 'a8:ba:25:69:f5': '3F-AP-1',   // 3F-AP-1
   'a8:ba:25:ce:9f:0': '3F-AP-2', 'a8:ba:25:69:f0': '3F-AP-2',   // 3F-AP-2
   'a8:ba:25:ce:a4:6': '3F-AP-3', 'a8:ba:25:6a:46': '3F-AP-3',   // 3F-AP-3
-  'a8:ba:25:ce:a4:e': '3F-AP-4', 'a8:ba:25:6a:4e': '3F-AP-4'    // 3F-AP-4
+  'a8:ba:25:ce:a4:e': '3F-AP-4', 'a8:ba:25:6a:4e': '3F-AP-4',   // 3F-AP-4
+
+  // New APs (f0:61:c0 prefix) - HypervergeHQ / Hyperverge-Guest
+  'f0:61:c0:bf:0d': 'CNP5K9T0L4',   // CNP5K9T0L4
+  'f0:61:c0:be:d5': 'CNP5K9T0YP',   // CNP5K9T0YP
+  'f0:61:c0:be:f1': 'CNP5K9T1XH',   // CNP5K9T1XH
+  'f0:61:c0:c0:06': 'CNP5K9T2TP',   // CNP5K9T2TP
+  'f0:61:c0:bf:c2': 'CNP5K9T3J7',   // CNP5K9T3J7
+
+  // New APs (dc:b7:ac prefix) - HypervergeHQ / Hyperverge-Guest
+  'dc:b7:ac:fc:d8': 'CNPWK9T1KL',   // CNPWK9T1KL
+  'dc:b7:ac:fb:f2': 'CNPWK9T1M6',   // CNPWK9T1M6
+  'dc:b7:ac:00:88': 'CNPYK9T3W2',   // CNPYK9T3W2
+  'dc:b7:ac:01:03': 'CNPYK9T3X4',   // CNPYK9T3X4
+  'dc:b7:ac:00:bd': 'CNPYK9T3XJ'    // CNPYK9T3XJ
 };
 
 // Lookup AP name by BSSID prefix
