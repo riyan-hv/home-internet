@@ -835,7 +835,7 @@ class SpeedDataManager: ObservableObject {
         checkForUpdate()
     }
 
-    static let appVersion = "3.1.43"
+    static let appVersion = "3.1.45"
 
     func checkForUpdate() {
         // Check version directly from GitHub to avoid deployment delays
