@@ -4,6 +4,10 @@ const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const session = require('express-session');
+const passport = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const pgSession = require('connect-pg-simple')(session);
 
 const APP_VERSION = "3.1.45";
 
@@ -20,6 +24,17 @@ if (!ADMIN_CONFIG.username || !ADMIN_CONFIG.passwordHash) {
   console.warn('⚠️  WARNING: Admin credentials not configured');
   console.warn('   Set ADMIN_USERNAME and ADMIN_PASSWORD_HASH environment variables');
   console.warn('   Generate hash: node -e "console.log(require(\'crypto\').createHash(\'sha256\').update(\'password\').digest(\'hex\'))"');
+}
+
+// Google OAuth configuration
+const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || 'hyperverge.co';
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+const GOOGLE_AUTH_ENABLED = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
+
+if (!GOOGLE_AUTH_ENABLED) {
+  console.warn('⚠️  WARNING: Google OAuth not configured');
+  console.warn('   Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and SESSION_SECRET');
+  console.warn('   Dashboard will be publicly accessible until OAuth is configured');
 }
 
 // Generate a secure session token
@@ -150,8 +165,9 @@ const limiter = rateLimit({
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/', limiter);
+
+// Note: Static files will be served after auth middleware is set up
 
 // Initialize PostgreSQL connection pool
 const pool = new Pool({
@@ -165,6 +181,95 @@ const pool = new Pool({
 });
 
 console.log(`PostgreSQL connection configured`);
+
+// =============================================================================
+// SESSION & GOOGLE OAUTH CONFIGURATION
+// =============================================================================
+
+// Session middleware (uses PostgreSQL for storage)
+app.use(session({
+  store: new pgSession({
+    pool,
+    tableName: 'user_sessions',
+    createTableIfMissing: true
+  }),
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Configure Google OAuth strategy (only if credentials are provided)
+if (GOOGLE_AUTH_ENABLED) {
+  passport.use(new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: '/auth/google/callback'
+    },
+    (accessToken, refreshToken, profile, done) => {
+      const email = (profile.emails?.[0]?.value || '').toLowerCase();
+
+      // Check domain restriction
+      if (!email.endsWith(`@${ALLOWED_DOMAIN}`)) {
+        return done(null, false, { message: 'Domain not allowed' });
+      }
+
+      // Check if user is admin (whitelisted for commands)
+      const isAdmin = ADMIN_EMAILS.includes(email);
+
+      return done(null, {
+        id: profile.id,
+        email,
+        name: profile.displayName,
+        picture: profile.photos?.[0]?.value,
+        isAdmin
+      });
+    }
+  ));
+
+  passport.serializeUser((user, done) => done(null, user));
+  passport.deserializeUser((user, done) => done(null, user));
+
+  console.log(`Google OAuth configured for @${ALLOWED_DOMAIN} domain`);
+  console.log(`Admin emails: ${ADMIN_EMAILS.length > 0 ? ADMIN_EMAILS.join(', ') : '(none configured)'}`);
+}
+
+// Middleware to require Google authentication
+function requireGoogleAuth(req, res, next) {
+  // Skip auth if Google OAuth is not configured
+  if (!GOOGLE_AUTH_ENABLED) {
+    return next();
+  }
+
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.redirect('/auth/google');
+}
+
+// Middleware to require admin (whitelisted Google users only)
+function requireGoogleAdmin(req, res, next) {
+  // Fall back to token-based auth if Google OAuth is not configured
+  if (!GOOGLE_AUTH_ENABLED) {
+    return requireAdmin(req, res, next);
+  }
+
+  if (req.isAuthenticated() && req.user.isAdmin) {
+    return next();
+  }
+  res.status(403).json({ error: 'Admin access required. Contact IT to be added to the admin list.' });
+}
+
+// Serve static files (after auth middleware is configured)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize database schema
 async function initDatabase() {
@@ -428,6 +533,15 @@ async function initDatabase() {
       );
 
       CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
+
+      -- Google OAuth user sessions (connect-pg-simple format)
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        sid VARCHAR NOT NULL PRIMARY KEY,
+        sess JSON NOT NULL,
+        expire TIMESTAMP(6) NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_expire ON user_sessions(expire);
     `);
     console.log('Database schema initialized');
   } catch (err) {
@@ -442,6 +556,76 @@ async function initDatabase() {
 initDatabase().catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);
+});
+
+// =============================================================================
+// GOOGLE OAUTH ROUTES
+// =============================================================================
+
+// Start Google OAuth flow
+app.get('/auth/google', (req, res, next) => {
+  if (!GOOGLE_AUTH_ENABLED) {
+    return res.status(503).send('Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+  }
+  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+});
+
+// Google OAuth callback
+app.get('/auth/google/callback',
+  (req, res, next) => {
+    if (!GOOGLE_AUTH_ENABLED) {
+      return res.redirect('/');
+    }
+    passport.authenticate('google', { failureRedirect: '/auth/denied' })(req, res, next);
+  },
+  (req, res) => res.redirect('/')
+);
+
+// Access denied page (wrong domain)
+app.get('/auth/denied', (req, res) => {
+  res.status(403).send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Access Denied</title>
+      <style>
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; text-align: center; background: #0a0a0a; color: #fff; }
+        h1 { color: #ef4444; }
+        a { color: #3b82f6; }
+      </style>
+    </head>
+    <body>
+      <h1>Access Denied</h1>
+      <p>Only @${ALLOWED_DOMAIN} email addresses can access this dashboard.</p>
+      <p><a href="/auth/google">Try again with a different account</a></p>
+    </body>
+    </html>
+  `);
+});
+
+// Logout
+app.get('/auth/logout', (req, res) => {
+  req.logout(() => {
+    req.session.destroy((err) => {
+      res.redirect('/auth/google');
+    });
+  });
+});
+
+// Get current authenticated user
+app.get('/api/auth/user', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({
+      user: {
+        email: req.user.email,
+        name: req.user.name,
+        picture: req.user.picture,
+        isAdmin: req.user.isAdmin
+      }
+    });
+  } else {
+    res.status(401).json({ error: 'Not authenticated' });
+  }
 });
 
 // Helper: Parse and validate numeric field
@@ -2308,8 +2492,8 @@ app.get('/setup', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
-// Serve dashboard
-app.get('/', (req, res) => {
+// Serve dashboard (protected by Google OAuth if configured)
+app.get('/', requireGoogleAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
@@ -2375,8 +2559,8 @@ app.get('/health', async (req, res) => {
 // Create a command for a device (or all devices) - ADMIN ONLY
 // POST /api/commands
 // Body: { device_id: "xxx" or "all", command: "force_update|force_speedtest|restart_service", payload?: {}, created_by?: "admin" }
-// Requires: Authorization: Bearer <token>
-app.post('/api/commands', requireAdmin, async (req, res) => {
+// Requires: Google OAuth admin (whitelisted email) or Bearer token auth
+app.post('/api/commands', requireGoogleAdmin, async (req, res) => {
   try {
     const { device_id, command, payload, created_by } = req.body;
 

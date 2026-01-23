@@ -1557,8 +1557,23 @@
                 </button>
             </div>
 
-            <!-- Admin Section -->
-            <div class="admin-section" style="margin-top: auto; padding: 16px; border-top: 1px solid var(--border);">
+            <!-- User Section (Google OAuth) -->
+            <div class="user-section" id="googleUserSection" style="margin-top: auto; padding: 16px; border-top: 1px solid var(--border); display: none;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <img id="userPicture" src="" alt="" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--border);">
+                    <div style="flex: 1; min-width: 0;">
+                        <div id="userName" style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+                        <div id="userEmail" style="font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                    <span id="adminBadge" class="admin-badge" style="background: var(--success-muted); color: var(--success); padding: 4px 8px; border-radius: 4px; font-size: 11px; display: none;">Admin</span>
+                    <a href="/auth/logout" class="btn btn-secondary btn-sm" style="margin-left: auto; padding: 4px 12px; font-size: 12px; text-decoration: none;">Logout</a>
+                </div>
+            </div>
+
+            <!-- Fallback Admin Section (when Google OAuth not configured) -->
+            <div class="admin-section" id="tokenAdminSection" style="margin-top: auto; padding: 16px; border-top: 1px solid var(--border);">
                 <div id="adminLoginSection">
                     <button class="btn btn-secondary" style="width: 100%;" onclick="showAdminLogin()">
                         🔐 Admin Login
@@ -2404,7 +2419,64 @@
         }
 
         // Check admin session on load
+        // Check if user is logged in via Google OAuth
+        let googleUser = null;
+
+        async function checkGoogleAuth() {
+            try {
+                const response = await fetch('/api/auth/user');
+                if (response.ok) {
+                    const data = await response.json();
+                    googleUser = data.user;
+                    updateGoogleUserUI(googleUser);
+                    return true;
+                }
+            } catch (err) {
+                console.log('Google OAuth not active');
+            }
+            return false;
+        }
+
+        function updateGoogleUserUI(user) {
+            const googleSection = document.getElementById('googleUserSection');
+            const tokenSection = document.getElementById('tokenAdminSection');
+
+            if (user) {
+                // Show Google user section, hide token admin section
+                googleSection.style.display = 'block';
+                tokenSection.style.display = 'none';
+
+                // Update user info
+                document.getElementById('userPicture').src = user.picture || '';
+                document.getElementById('userName').textContent = user.name || '';
+                document.getElementById('userEmail').textContent = user.email || '';
+
+                // Show admin badge if user is admin
+                const adminBadge = document.getElementById('adminBadge');
+                if (user.isAdmin) {
+                    adminBadge.style.display = 'inline';
+                    // Show commands nav for admins
+                    document.getElementById('commandsNavItem').style.display = 'block';
+                } else {
+                    adminBadge.style.display = 'none';
+                    document.getElementById('commandsNavItem').style.display = 'none';
+                }
+            } else {
+                // No Google user, show token admin section
+                googleSection.style.display = 'none';
+                tokenSection.style.display = 'block';
+            }
+        }
+
         async function checkAdminSession() {
+            // First check Google OAuth
+            const hasGoogleAuth = await checkGoogleAuth();
+            if (hasGoogleAuth) {
+                // Google OAuth is active, skip token-based auth
+                return;
+            }
+
+            // Fall back to token-based admin auth
             if (!adminToken) {
                 updateAdminUI(false);
                 return;
@@ -4294,9 +4366,11 @@
 
         // Send command
         async function sendCommand(command) {
-            if (!adminToken) {
-                showToast('Admin login required to send commands', 'error');
-                showAdminLogin();
+            // Check if user has admin rights (Google OAuth admin or token-based admin)
+            const isGoogleAdmin = googleUser && googleUser.isAdmin;
+            if (!isGoogleAdmin && !adminToken) {
+                showToast('Admin access required to send commands', 'error');
+                if (!googleUser) showAdminLogin();
                 return;
             }
 
@@ -4311,18 +4385,25 @@
 
             try {
                 for (const deviceId of targetDevices) {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+
                     const response = await fetch('/api/commands', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${adminToken}`
-                        },
+                        headers,
+                        credentials: 'same-origin',  // Include session cookie for Google OAuth
                         body: JSON.stringify({ device_id: deviceId, command })
                     });
 
                     if (response.status === 401) {
                         showToast('Session expired. Please login again.', 'error');
-                        adminLogout();
+                        if (googleUser) window.location.href = '/auth/google';
+                        else adminLogout();
+                        return;
+                    }
+
+                    if (response.status === 403) {
+                        showToast('Admin access required. Contact IT to be added to admin list.', 'error');
                         return;
                     }
                 }
@@ -4336,27 +4417,35 @@
 
         // Send command to specific device
         async function sendCommandToDevice(command) {
-            if (!adminToken) {
-                showToast('Admin login required to send commands', 'error');
-                showAdminLogin();
+            const isGoogleAdmin = googleUser && googleUser.isAdmin;
+            if (!isGoogleAdmin && !adminToken) {
+                showToast('Admin access required to send commands', 'error');
+                if (!googleUser) showAdminLogin();
                 return;
             }
 
             if (!currentDevice) return;
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+
                 const response = await fetch('/api/commands', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${adminToken}`
-                    },
+                    headers,
+                    credentials: 'same-origin',
                     body: JSON.stringify({ device_id: currentDevice.device_id, command })
                 });
 
                 if (response.status === 401) {
                     showToast('Session expired. Please login again.', 'error');
-                    adminLogout();
+                    if (googleUser) window.location.href = '/auth/google';
+                    else adminLogout();
+                    return;
+                }
+
+                if (response.status === 403) {
+                    showToast('Admin access required. Contact IT to be added to admin list.', 'error');
                     return;
                 }
 
@@ -4369,9 +4458,10 @@
 
         // Send command to all active devices
         async function sendCommandToAll() {
-            if (!adminToken) {
-                showToast('Admin login required to send commands', 'error');
-                showAdminLogin();
+            const isGoogleAdmin = googleUser && googleUser.isAdmin;
+            if (!isGoogleAdmin && !adminToken) {
+                showToast('Admin access required to send commands', 'error');
+                if (!googleUser) showAdminLogin();
                 return;
             }
 
@@ -4379,18 +4469,25 @@
             if (!command) return;
 
             try {
+                const headers = { 'Content-Type': 'application/json' };
+                if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+
                 const response = await fetch('/api/commands', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${adminToken}`
-                    },
+                    headers,
+                    credentials: 'same-origin',
                     body: JSON.stringify({ device_id: 'all', command })
                 });
 
                 if (response.status === 401) {
                     showToast('Session expired. Please login again.', 'error');
-                    adminLogout();
+                    if (googleUser) window.location.href = '/auth/google';
+                    else adminLogout();
+                    return;
+                }
+
+                if (response.status === 403) {
+                    showToast('Admin access required. Contact IT to be added to admin list.', 'error');
                     return;
                 }
 
