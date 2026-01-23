@@ -9,7 +9,7 @@
 # v2.1.0: Added WiFi debugging metrics (MCS, error rates, BSSID tracking)
 #
 
-APP_VERSION="3.1.43"
+APP_VERSION="3.1.44"
 
 # Configuration
 DATA_DIR="$HOME/.local/share/nkspeedtest"
@@ -258,7 +258,10 @@ get_wifi_details() {
                 # Only use cache if SSID is not generic "WiFi" or "Not Connected"
                 if [[ -n "$cached_ssid" && "$cached_ssid" != "WiFi" && "$cached_ssid" != "Not Connected" ]]; then
                     log "Using WiFi cache (age: ${cache_age}s, SSID: $cached_ssid)"
-                    echo "$wifi_output"
+                    # Output with proper quoting for eval (handles SSIDs with spaces)
+                    while IFS='=' read -r key value; do
+                        [[ -n "$key" ]] && echo "${key}=\"${value}\""
+                    done <<< "$wifi_output"
                     return
                 fi
             fi
@@ -271,7 +274,10 @@ get_wifi_details() {
         local wifi_output=$("$speedmonitor_app" --output 2>/dev/null)
         # Check if helper returned valid data (CONNECTED=true)
         if echo "$wifi_output" | grep -q "CONNECTED=true"; then
-            echo "$wifi_output"
+            # Output with proper quoting for eval (handles SSIDs with spaces)
+            while IFS='=' read -r key value; do
+                [[ -n "$key" ]] && echo "${key}=\"${value}\""
+            done <<< "$wifi_output"
             return
         fi
     fi
@@ -281,7 +287,10 @@ get_wifi_details() {
         local wifi_output=$("$WIFI_HELPER" 2>/dev/null)
         # Check if helper returned valid data (CONNECTED=true)
         if echo "$wifi_output" | grep -q "CONNECTED=true"; then
-            echo "$wifi_output"
+            # Output with proper quoting for eval (handles SSIDs with spaces)
+            while IFS='=' read -r key value; do
+                [[ -n "$key" ]] && echo "${key}=\"${value}\""
+            done <<< "$wifi_output"
             return
         fi
     fi
@@ -296,17 +305,17 @@ get_wifi_details() {
             local rssi=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *agrCtlRSSI/ {print $2}')
             local noise=$("$airport" -I 2>/dev/null | awk -F': ' '/^ *agrCtlNoise/ {print $2}')
 
-            echo "CONNECTED=true"
-            echo "INTERFACE=en0"
-            echo "SSID=${ssid}"
-            echo "BSSID=${bssid:-unknown}"
-            echo "CHANNEL=${channel:-0}"
-            echo "BAND=unknown"
-            echo "WIDTH_MHZ=0"
-            echo "RSSI_DBM=${rssi:-0}"
-            echo "NOISE_DBM=${noise:-0}"
-            echo "SNR_DB=0"
-            echo "TX_RATE_MBPS=0"
+            echo "CONNECTED=\"true\""
+            echo "INTERFACE=\"en0\""
+            echo "SSID=\"${ssid}\""
+            echo "BSSID=\"${bssid:-unknown}\""
+            echo "CHANNEL=\"${channel:-0}\""
+            echo "BAND=\"unknown\""
+            echo "WIDTH_MHZ=\"0\""
+            echo "RSSI_DBM=\"${rssi:-0}\""
+            echo "NOISE_DBM=\"${noise:-0}\""
+            echo "SNR_DB=\"0\""
+            echo "TX_RATE_MBPS=\"0\""
             return
         fi
     fi
@@ -344,33 +353,33 @@ get_wifi_details() {
             snr=$((rssi - noise))
         fi
 
-        echo "CONNECTED=true"
-        echo "INTERFACE=en0"
-        echo "SSID=WiFi"  # SSID is redacted by macOS privacy
-        echo "BSSID=unknown"
-        echo "CHANNEL=${channel:-0}"
-        echo "BAND=${band}"
-        echo "WIDTH_MHZ=${width}"
-        echo "RSSI_DBM=${rssi:-0}"
-        echo "NOISE_DBM=${noise:-0}"
-        echo "SNR_DB=${snr}"
-        echo "TX_RATE_MBPS=${tx_rate:-0}"
-        echo "MCS_INDEX=${mcs:--1}"
+        echo "CONNECTED=\"true\""
+        echo "INTERFACE=\"en0\""
+        echo "SSID=\"WiFi\""  # SSID is redacted by macOS privacy
+        echo "BSSID=\"unknown\""
+        echo "CHANNEL=\"${channel:-0}\""
+        echo "BAND=\"${band}\""
+        echo "WIDTH_MHZ=\"${width}\""
+        echo "RSSI_DBM=\"${rssi:-0}\""
+        echo "NOISE_DBM=\"${noise:-0}\""
+        echo "SNR_DB=\"${snr}\""
+        echo "TX_RATE_MBPS=\"${tx_rate:-0}\""
+        echo "MCS_INDEX=\"${mcs:--1}\""
         return
     fi
 
     # Not connected to WiFi or using Ethernet
-    echo "CONNECTED=false"
-    echo "INTERFACE=none"
-    echo "SSID=Unknown/Ethernet"
-    echo "BSSID=unknown"
-    echo "CHANNEL=0"
-    echo "BAND=unknown"
-    echo "WIDTH_MHZ=0"
-    echo "RSSI_DBM=0"
-    echo "NOISE_DBM=0"
-    echo "SNR_DB=0"
-    echo "TX_RATE_MBPS=0"
+    echo "CONNECTED=\"false\""
+    echo "INTERFACE=\"none\""
+    echo "SSID=\"Unknown/Ethernet\""
+    echo "BSSID=\"unknown\""
+    echo "CHANNEL=\"0\""
+    echo "BAND=\"unknown\""
+    echo "WIDTH_MHZ=\"0\""
+    echo "RSSI_DBM=\"0\""
+    echo "NOISE_DBM=\"0\""
+    echo "SNR_DB=\"0\""
+    echo "TX_RATE_MBPS=\"0\""
 }
 
 # Detect VPN status
