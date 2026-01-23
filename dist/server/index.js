@@ -22,35 +22,46 @@ if (!ADMIN_CONFIG.username || !ADMIN_CONFIG.passwordHash) {
   console.warn('   Generate hash: node -e "console.log(require(\'crypto\').createHash(\'sha256\').update(\'password\').digest(\'hex\'))"');
 }
 
-// Active admin sessions (in-memory for simplicity, resets on server restart)
-const adminSessions = new Map();
-
 // Generate a secure session token
 function generateSessionToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// Verify admin session
-function verifyAdminSession(token) {
+// Verify admin session (database-backed for persistence across restarts)
+async function verifyAdminSession(token) {
   if (!token) return false;
-  const session = adminSessions.get(token);
-  if (!session) return false;
-  // Sessions expire after 24 hours
-  if (Date.now() - session.createdAt > 24 * 60 * 60 * 1000) {
-    adminSessions.delete(token);
-    return false;
+  try {
+    const result = await pool.query(
+      'SELECT username FROM admin_sessions WHERE token = $1 AND expires_at > NOW()',
+      [token]
+    );
+    return result.rows.length > 0 ? result.rows[0] : null;
+  } catch (err) {
+    console.error('Error verifying admin session:', err);
+    return null;
   }
-  return true;
 }
 
+// Clean up expired sessions periodically
+async function cleanupExpiredSessions() {
+  try {
+    await pool.query('DELETE FROM admin_sessions WHERE expires_at < NOW()');
+  } catch (err) {
+    console.error('Error cleaning up sessions:', err);
+  }
+}
+setInterval(cleanupExpiredSessions, 60 * 60 * 1000); // Clean up every hour
+
 // Middleware to require admin authentication
-function requireAdmin(req, res, next) {
+async function requireAdmin(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.replace('Bearer ', '');
 
-  if (!verifyAdminSession(token)) {
+  const session = await verifyAdminSession(token);
+  if (!session) {
     return res.status(401).json({ error: 'Admin authentication required' });
   }
+  req.adminUser = session.username;
   next();
 }
 
@@ -407,6 +418,16 @@ async function initDatabase() {
 
       CREATE INDEX IF NOT EXISTS idx_command_logs_command_id ON command_logs(command_id);
       CREATE INDEX IF NOT EXISTS idx_command_logs_timestamp ON command_logs(timestamp);
+
+      -- v3.1.46: Admin sessions (persistent across server restarts)
+      CREATE TABLE IF NOT EXISTS admin_sessions (
+        token TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
     `);
     console.log('Database schema initialized');
   } catch (err) {
@@ -570,7 +591,7 @@ app.get('/api/version', (req, res) => {
 // ============================================================================
 
 // Admin login
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -581,38 +602,52 @@ app.post('/api/admin/login', (req, res) => {
 
   if (username === ADMIN_CONFIG.username && passwordHash === ADMIN_CONFIG.passwordHash) {
     const token = generateSessionToken();
-    adminSessions.set(token, { username, createdAt: Date.now() });
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-    return res.json({
-      success: true,
-      token,
-      username,
-      expiresIn: '24h'
-    });
+    try {
+      await pool.query(
+        'INSERT INTO admin_sessions (token, username, expires_at) VALUES ($1, $2, $3)',
+        [token, username, expiresAt]
+      );
+
+      return res.json({
+        success: true,
+        token,
+        username,
+        expiresIn: '24h'
+      });
+    } catch (err) {
+      console.error('Error creating session:', err);
+      return res.status(500).json({ error: 'Failed to create session' });
+    }
   }
 
   return res.status(401).json({ error: 'Invalid username or password' });
 });
 
 // Admin logout
-app.post('/api/admin/logout', (req, res) => {
+app.post('/api/admin/logout', async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.replace('Bearer ', '');
 
   if (token) {
-    adminSessions.delete(token);
+    try {
+      await pool.query('DELETE FROM admin_sessions WHERE token = $1', [token]);
+    } catch (err) {
+      console.error('Error deleting session:', err);
+    }
   }
 
   res.json({ success: true });
 });
 
 // Check admin session validity
-app.get('/api/admin/session', (req, res) => {
+app.get('/api/admin/session', async (req, res) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.replace('Bearer ', '');
 
-  if (verifyAdminSession(token)) {
-    const session = adminSessions.get(token);
+  const session = await verifyAdminSession(token);
+  if (session) {
     return res.json({ valid: true, username: session.username });
   }
 
